@@ -17,12 +17,17 @@ from jaxrl2.agents.sac.critic_updater import update_critic
 from jaxrl2.agents.sac.temperature import Temperature
 from jaxrl2.agents.sac.temperature_updater import update_temperature
 from jaxrl2.data.dataset import DatasetDict
-from jaxrl2.networks.encoders import D4PGEncoder, ResNetV2Encoder
+# from jaxrl2.networks.encoders import D4PGEncoder, ResNetV2Encoder
+from jaxrl2.networks.encoders import D4PGEncoderGroups ###===### ###---###
 from jaxrl2.networks.normal_tanh_policy import NormalTanhPolicy
 from jaxrl2.networks.pixel_multiplexer import PixelMultiplexer
 from jaxrl2.networks.values import StateActionEnsemble
 from jaxrl2.types import Params, PRNGKey
 from jaxrl2.utils.target_update import soft_target_update
+
+import os ###===###
+from flax.training import checkpoints
+from glob import glob ###---###
 
 
 # Helps to minimize CPU to GPU transfer.
@@ -127,6 +132,7 @@ class DrQLearner(Agent):
         cnn_filters: Sequence[int] = (3, 3, 3, 3),
         cnn_strides: Sequence[int] = (2, 1, 1, 1),
         cnn_padding: str = "VALID",
+        cnn_groups: int = 1, ###===### ###---###
         latent_dim: int = 50,
         discount: float = 0.99,
         tau: float = 0.005,
@@ -157,9 +163,8 @@ class DrQLearner(Agent):
         rng, actor_key, critic_key, temp_key = jax.random.split(rng, 4)
 
         if encoder == "d4pg":
-            encoder_def = D4PGEncoder(
-                cnn_features, cnn_filters, cnn_strides, cnn_padding
-            )
+            # encoder_def = D4PGEncoder(cnn_features, cnn_filters, cnn_strides, cnn_padding)
+            encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups) ###===### ###---###
         elif encoder == "resnet":
             encoder_def = ResNetV2Encoder((2, 2, 2, 2))
 
@@ -232,3 +237,33 @@ class DrQLearner(Agent):
         self._temp = new_temp
 
         return info
+
+    ###===###
+    @property
+    def _save_dict(self):
+        save_dict = {
+            'critic': self._critic,
+            'target_critic_params': self._target_critic_params,
+            'actor': self._actor,
+            "temp":self._temp,
+        }
+        return save_dict
+
+    def restore_checkpoint(self, dir):
+        if os.path.isfile(dir):
+            checkpoint_file = dir
+        else:
+            def sort_key_fn(checkpoint_file):
+                chkpt_name = checkpoint_file.split("/")[-1]
+                return int(chkpt_name[len("checkpoint"):])
+
+            checkpoint_files = glob(os.path.join(dir, "checkpoint*"))
+            checkpoint_files = sorted(checkpoint_files, key=sort_key_fn)
+            checkpoint_file = checkpoint_files[-1]
+
+        output_dict = checkpoints.restore_checkpoint(checkpoint_file, self._save_dict)
+        self._critic = output_dict['critic']
+        self._target_critic_params = output_dict['target_critic_params']
+        self._actor = output_dict['actor']
+        self._temp = output_dict["temp"]
+    ###---###

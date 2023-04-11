@@ -5,6 +5,8 @@ from jaxrl2.agents.common import eval_actions_jit, eval_log_prob_jit, sample_act
 from jaxrl2.data.dataset import DatasetDict
 from jaxrl2.types import PRNGKey
 
+from flax.training import checkpoints ###===### ###---###
+
 
 class Agent(object):
     _actor: TrainState
@@ -29,3 +31,15 @@ class Agent(object):
         self._rng = rng
 
         return np.asarray(actions)
+
+    ###===###
+    @property
+    def _save_dict(self):
+        raise NotImplementedError
+
+    def save_checkpoint(self, dir, step, keep_every_n_steps):
+        checkpoints.save_checkpoint(dir, self._save_dict, step, prefix='checkpoint', overwrite=False, keep_every_n_steps=keep_every_n_steps)
+
+    def restore_checkpoint(self, dir):
+        raise NotImplementedError
+    ###---###

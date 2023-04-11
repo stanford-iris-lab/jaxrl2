@@ -12,11 +12,16 @@ from jaxrl2.agents.agent import Agent
 from jaxrl2.agents.bc.actor_updater import log_prob_update
 from jaxrl2.agents.drq.augmentations import batched_random_crop
 from jaxrl2.data.dataset import DatasetDict
-from jaxrl2.networks.encoders import D4PGEncoder, ResNetV2Encoder
+# from jaxrl2.networks.encoders import D4PGEncoder, ResNetV2Encoder
+from jaxrl2.networks.encoders import D4PGEncoderGroups ###===### ###---###
 from jaxrl2.networks.normal_policy import UnitStdNormalPolicy
 from jaxrl2.networks.pixel_multiplexer import PixelMultiplexer
 from jaxrl2.types import Params, PRNGKey
 
+
+import os ###===###
+from flax.training import checkpoints
+from glob import glob ###---###
 
 @jax.jit
 def _update_jit(
@@ -45,6 +50,7 @@ class PixelBCLearner(Agent):
         cnn_filters: Sequence[int] = (3, 3, 3, 3),
         cnn_strides: Sequence[int] = (2, 1, 1, 1),
         cnn_padding: str = "VALID",
+        cnn_groups: int = 1,  ###===### ###---###
         latent_dim: int = 50,
         dropout_rate: Optional[float] = None,
         encoder: str = "d4pg",
@@ -59,9 +65,8 @@ class PixelBCLearner(Agent):
         rng, actor_key = jax.random.split(rng)
 
         if encoder == "d4pg":
-            encoder_def = D4PGEncoder(
-                cnn_features, cnn_filters, cnn_strides, cnn_padding
-            )
+            # encoder_def = D4PGEncoder(cnn_features, cnn_filters, cnn_strides, cnn_padding)
+            encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups) ###===### ###---###
         elif encoder == "resnet":
             encoder_def = ResNetV2Encoder((2, 2, 2, 2))
 
@@ -90,3 +95,27 @@ class PixelBCLearner(Agent):
         self._actor = new_actor
 
         return info
+
+    ###===###
+    @property
+    def _save_dict(self):
+        save_dict = {
+            'actor': self._actor,
+        }
+        return save_dict
+
+    def restore_checkpoint(self, dir):
+        if os.path.isfile(dir):
+            checkpoint_file = dir
+        else:
+            def sort_key_fn(checkpoint_file):
+                chkpt_name = checkpoint_file.split("/")[-1]
+                return int(chkpt_name[len("checkpoint"):])
+
+            checkpoint_files = glob(os.path.join(dir, "checkpoint*"))
+            checkpoint_files = sorted(checkpoint_files, key=sort_key_fn)
+            checkpoint_file = checkpoint_files[-1]
+
+        output_dict = checkpoints.restore_checkpoint(checkpoint_file, self._save_dict)
+        self._actor = output_dict['actor']
+    ###---###
