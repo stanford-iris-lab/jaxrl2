@@ -15,8 +15,6 @@ NUM_CQL_REPEAT = 4
 CLIP_MIN=0
 CLIP_MAX=20
 
-def sigmoid(x):
-    return 0.5 * (jnp.tanh(x / 2) + 1)
 
 def compute_batch_stats_mean(batch_stats):
     flattened_batch_stats = jax.flatten_util.ravel_pytree(batch_stats)[0]
@@ -26,57 +24,6 @@ def compute_batch_stats_mean(batch_stats):
         'norm_batch_stats': jnp.linalg.norm(flattened_batch_stats),
         'batch_stats_shape': flattened_batch_stats.shape[-1]
     }
-
-def get_cds_weights(key: PRNGKey, actor: TrainState, critic_encoder: TrainState, critic_decoder: TrainState, batch, cds_weight_temp_tau=0.995, cds_weight_temp_min=10.0, cds_weight_temp_max=10000.0, cds_weight_percentile=None, cds_weight_orig_task=False, cds_relabel_prob=0.5, true_embed_length=1024,):
-    keys=jax.random.split(key, 2)
-    key, keys = keys[0], keys[1:]
-    
-    relabel_masks=batch['relabel_masks']
-    
-    if hasattr(critic_encoder, 'batch_stats') and critic_encoder.batch_stats is not None:
-        embed_curr_obs, _ = critic_encoder.apply_fn({'params': critic_encoder.params, 'batch_stats': critic_encoder.batch_stats}, batch['observations'], mutable=['batch_stats'], training=True)
-        embed_next_obs, _ = critic_encoder.apply_fn({'params': critic_encoder.params, 'batch_stats': critic_encoder.batch_stats}, batch['next_observations'], mutable=['batch_stats'], training=True)
-    else:
-        embed_curr_obs = critic_encoder.apply_fn({'params': critic_encoder.params}, batch['observations'])
-        embed_next_obs = critic_encoder.apply_fn({'params': critic_encoder.params}, batch['next_observations'])
-    
-    if hasattr(critic_decoder, 'batch_stats') and critic_decoder.batch_stats is not None:
-        qs, _ = critic_decoder.apply_fn({'params': critic_decoder.params, 'batch_stats': critic_decoder.batch_stats},embed_curr_obs, batch['actions'], mutable=['batch_stats'], rngs={'dropout': keys[0]}, training=True)
-    else:
-        qs = critic_decoder.apply_fn( {'params': critic_decoder.params}, embed_curr_obs, batch['actions'], rngs={'dropout': keys[0]})
-    
-    qs_orig = torch.masked_select(qs, relabel_masks == 0.0) # TODO: find replacement for this
-    
-    if cds_weight_percentile is not None:
-        qs_orig_avg = jnp.percentile(qs_orig, cds_weight_percentile, axis=0, interpolation='nearest', keepdims=True).squeeze()
-    else:
-        qs_orig_avg = qs_orig.mean()
-        
-        
-    q_diff = qs - qs_orig_avg
-
-    if cds_weight_temp_value is None:
-        cds_weight_temp_value = q_diff.abs().mean()
-    else:
-        cds_weight_temp_value = cds_weight_temp_tau * cds_weight_temp_value + (1.0 - cds_weight_temp_tau) * q_diff.abs().mean()
-    
-                                    
-    cds_weight_temp_avg = jnp.clamp(cds_weight_temp_value, min=cds_weight_temp_min, max=cds_weight_temp_max)
-    q_diff_normalized = q_diff / cds_weight_temp_avg
-    
-    cds_weights = (sigmoid(q_diff_normalized) * relabel_masks + (1.0 - relabel_masks)).detach()
-    
-    cds_weight1, cds_weight2 = cds_weights[0], cds_weights[1]
-    
-    cds_q1_entropy = cds_weight1.detach() * jnp.log(cds_weight1.detach())
-    cds_q1_entropy = cds_q1_entropy.sum()
-
-    cds_q2_entropy = cds_weight2.detach() * jnp.log(cds_weight2.detach())
-    cds_q2_entropy = cds_q2_entropy.sum()
-
-    cds_weight = jnp.min(cds_weight1, cds_weight2)
-    
-    return cds_weight, cds_weight1, cds_weight2, cds_q1_entropy, cds_q2_entropy
 
 
 def extend_and_repeat(tensor, axis, repeat):
@@ -136,7 +83,7 @@ def update_critic(
         discount: float, backup_entropy: bool, critic_reduction: str, cql_alpha: float, max_q_backup: bool, dr3_coefficient: float,
         method:bool=False, method_const:float=1.0, method_type:int=0, cross_norm:bool=False,
         use_basis_projection:bool=False, basis_projection_coefficient:float=0.0,
-        use_gaussian_policy: bool = False, min_q_version: int = 3,
+        use_gaussian_policy: bool = False, min_q_version: int = 3, bound_q_with_mc:bool=False, 
     ):
 
     key, key_pi, key_random, key_temp, key_q = jax.random.split(key, num=5)
@@ -247,7 +194,10 @@ def update_critic(
             minval=-3.0, maxval=3.0
         )
         random_pi = (1.0/6.0) ** policy_actions.shape[-1]
-
+    
+    if bound_q_with_mc is not None:
+        global  bound_q_with_mc_global
+        bound_q_with_mc_global = bound_q_with_mc
 
     def critic_loss_fn(critic_encoder_params: Params, critic_decoder_params: Params):
         if hasattr(critic_encoder, 'batch_stats') and critic_encoder.batch_stats is not None:
@@ -294,7 +244,13 @@ def update_critic(
             q_pi = critic_decoder.apply_fn(
                 {'params': critic_decoder_params}, embed_curr_obs_tiled, policy_actions,
                 rngs={'dropout': key_q3})
-        
+
+        if bound_q_with_mc_global:
+            mc_returns_tiled = jnp.reshape(jnp.repeat(batch['mc_returns'], NUM_CQL_REPEAT), (1, -1))
+            mc_returns = jnp.repeat(mc_returns_tiled, q_pi.shape[0], axis=0)
+            q_pi = jnp.maximum(q_pi, mc_returns)
+            mc_bounded_rate = jnp.sum(q_pi==mc_returns) / jnp.sum(mc_returns==mc_returns)
+
         q_pi_for_is = (q_pi[0] - policy_log_probs, q_pi[1] - policy_log_probs)
 
         # When not using importance sampling, we can use this version
@@ -345,8 +301,10 @@ def update_critic(
         
         cql_loss_per_element = lse_q - qs
 
-        cql_loss = cql_loss_per_element.mean()
+        if "cql_alpha" in batch.keys():
+            cql_loss_per_element = cql_loss_per_element.mean(axis=0) * batch["cql_alpha"].squeeze()
 
+        cql_loss = cql_loss_per_element.mean()
         critic_loss = critic_loss + cql_alpha * cql_loss
         
         # DR3 loss
@@ -440,6 +398,9 @@ def update_critic(
             batch_stats_dict = compute_batch_stats_mean(new_model_state)
             things_to_log.update(batch_stats_dict)
 
+        if bound_q_with_mc_global:
+            things_to_log['mc_bounded_rate'] = mc_bounded_rate
+            
         return critic_loss, (things_to_log, new_model_state)
 
     (grads_encoder,grads_decoder), (info,new_model_state) = jax.grad(critic_loss_fn, has_aux=True, argnums=(0,1))(critic_encoder.params, critic_decoder.params)

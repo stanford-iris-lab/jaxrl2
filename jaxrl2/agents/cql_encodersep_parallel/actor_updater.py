@@ -20,7 +20,7 @@ def compute_batch_stats_mean(batch_stats):
 
 def update_actor(key: PRNGKey, actor: TrainState, critic_encoder: TrainState, critic_decoder: TrainState,
                  temp: TrainState, batch: DatasetDict, cross_norm:bool=False,
-                 use_gaussian_policy: bool = False, autoregressive_policy: bool = False):
+                 use_gaussian_policy: bool = False):
     
     key, key_act, key_q = jax.random.split(key, num=3)
 
@@ -33,7 +33,7 @@ def update_actor(key: PRNGKey, actor: TrainState, critic_encoder: TrainState, cr
             dist = actor.apply_fn({'params': actor_params}, batch['observations'])
             new_model_state = {}
 
-        if not use_gaussian_policy and not autoregressive_policy:
+        if not use_gaussian_policy:
             mean_dist = dist.distribution._loc
             std_diag_dist = dist.distribution._scale_diag
         else:
@@ -57,7 +57,8 @@ def update_actor(key: PRNGKey, actor: TrainState, critic_encoder: TrainState, cr
             dataset_actions_mse = dist.log_prob(batch['actions'])
 
         if hasattr(critic_encoder, 'batch_stats') and critic_encoder.batch_stats is not None:
-            embed_curr_obs, _ = critic_encoder.apply_fn({'params': critic_encoder.params, 'batch_stats': critic_encoder.batch_stats}, batch['observations'], mutable=['batch_stats'], training=False)
+            embed_curr_obs, _ = critic_encoder.apply_fn({'params': critic_encoder.params, 'batch_stats': critic_encoder.batch_stats}, 
+                                                        batch['observations'], mutable=['batch_stats'], training=False)
         else:
             embed_curr_obs = critic_encoder.apply_fn({'params': critic_encoder.params}, batch['observations'])
             
@@ -74,10 +75,7 @@ def update_actor(key: PRNGKey, actor: TrainState, critic_encoder: TrainState, cr
         
         if not use_gaussian_policy:
             actor_loss = (log_probs * temp.apply_fn({'params': temp.params}) - q).mean()
-            if autoregressive_policy:
-                pred_actions_mean = jnp.tanh(dist._loc)
-            else:
-                pred_actions_mean = jnp.tanh(dist.distribution._loc)
+            pred_actions_mean = jnp.tanh(dist.distribution._loc)
         else:
             actor_loss = -(q.mean())
             pred_actions_mean = dist._loc
