@@ -3,11 +3,33 @@ from typing import Optional, Sequence
 import distrax
 import flax.linen as nn
 import jax.numpy as jnp
-from tensorflow_probability.substrates import jax as tfp
 
 from jaxrl2.networks import MLP
-from jaxrl2.networks.constants import default_init, xavier_init
+from jaxrl2.networks.constants import default_init
 
+class LearnedStdNormalPolicy(nn.Module):
+    hidden_dims: Sequence[int]
+    action_dim: int
+    dropout_rate: Optional[float] = None
+    log_std_min: Optional[float] = -20
+    log_std_max: Optional[float] = 2
+
+    @nn.compact
+    def __call__(self,
+                 observations: jnp.ndarray,
+                 training: bool = False) -> distrax.Distribution:
+        outputs = MLP(self.hidden_dims,
+                      activate_final=True,
+                      dropout_rate=self.dropout_rate)(observations,
+                                                      training=training)
+
+        means = nn.Dense(self.action_dim, kernel_init=default_init(1e-2))(outputs)
+
+        log_stds = nn.Dense(self.action_dim, kernel_init=default_init(1e-2))(outputs)
+        log_stds = jnp.clip(log_stds, self.log_std_min, self.log_std_max)
+
+        distribution = distrax.MultivariateNormalDiag(loc=means, scale_diag=jnp.exp(log_stds))
+        return distribution
 
 class TanhMultivariateNormalDiag(distrax.Transformed):
 
@@ -49,16 +71,12 @@ class TanhMultivariateNormalDiag(distrax.Transformed):
         return self.bijector.forward(self.distribution.mode())
 
 
-class NormalTanhPolicy(nn.Module):
+class LearnedStdTanhNormalPolicy(nn.Module):
     hidden_dims: Sequence[int]
     action_dim: int
     dropout_rate: Optional[float] = None
-    log_std_min: Optional[float] = -20
+    log_std_min: Optional[float] = -5
     log_std_max: Optional[float] = 2
-    low: Optional[jnp.ndarray] = None
-    high: Optional[jnp.ndarray] = None
-    mlp_init_scale: float = 1.0
-    init_method: str = 'default'
 
     @nn.compact
     def __call__(self,
@@ -66,20 +84,13 @@ class NormalTanhPolicy(nn.Module):
                  training: bool = False) -> distrax.Distribution:
         outputs = MLP(self.hidden_dims,
                       activate_final=True,
-                      dropout_rate=self.dropout_rate,
-                      init_scale=self.mlp_init_scale)(observations,
+                      dropout_rate=self.dropout_rate)(observations,
                                                       training=training)
 
-        if self.init_method == 'xavier':
-            means = nn.Dense(self.action_dim, kernel_init=xavier_init())(outputs)
-            log_stds = nn.Dense(self.action_dim, kernel_init=xavier_init())(outputs)
-        else:
-            means = nn.Dense(self.action_dim, kernel_init=default_init(self.mlp_init_scale))(outputs)
-            log_stds = nn.Dense(self.action_dim, kernel_init=default_init())(outputs)
+        means = nn.Dense(self.action_dim, kernel_init=default_init(1e-2))(outputs)
 
+        log_stds = nn.Dense(self.action_dim, kernel_init=default_init(1e-2))(outputs)
         log_stds = jnp.clip(log_stds, self.log_std_min, self.log_std_max)
 
-        return TanhMultivariateNormalDiag(loc=means,
-                                          scale_diag=jnp.exp(log_stds) * self.mlp_init_scale,
-                                          low=self.low,
-                                          high=self.high)
+        distribution = TanhMultivariateNormalDiag(loc=means, scale_diag=jnp.exp(log_stds))
+        return distribution
