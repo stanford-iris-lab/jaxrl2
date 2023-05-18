@@ -86,17 +86,21 @@ class PixelMultiplexer(nn.Module):
             x = nn.LayerNorm()(x)
             x = nn.tanh(x)
 
-        ###===###
-        if "states" in observations:
-            y = nn.Dense(self.latent_dim, kernel_init=default_init())(
-                observations["states"]
-            )
-            y = nn.LayerNorm()(y)
-            y = nn.tanh(y)
 
-            x = jnp.concatenate([x, y], axis=-1)
-        ###---###
+
         x = observations.copy(add_or_replace={'pixels': x})
+
+        # ###===###
+        # if "states" in observations:
+        #     y = nn.Dense(self.latent_dim, kernel_init=default_init())(
+        #         observations["states"]
+        #     )
+        #     y = nn.LayerNorm()(y)
+        #     y = nn.tanh(y)
+        # 
+        #     # x = jnp.concatenate([x, y], axis=-1)
+        #     x = x.copy(add_or_replace={'states': y})
+        # ###---###
 
         print('fully connected keys', x.keys())
         if actions is None:

@@ -131,8 +131,6 @@ def get_calql_config():
     config.share_encoders = False
     config.freeze_encoders = False
 
-    config.color_jitter = False ###DELETE###
-
     return config
 
 def get_config(config_string):

@@ -30,7 +30,7 @@ from jaxrl2.types import Params, PRNGKey
 
 from jaxrl2.agents.agent import Agent
 from jaxrl2.networks.learned_std_normal_policy import LearnedStdNormalPolicy, LearnedStdTanhNormalPolicy
-from jaxrl2.agents.drq.augmentations import batched_random_crop#, color_transform ###===### ###---###
+from jaxrl2.agents.drq.augmentations import batched_random_crop, color_transform ###===### ###---###
 # from jaxrl2.agents.common import _unpack ###===### ###---###
 from jaxrl2.agents.drq.drq_learner import _share_encoder
 from jaxrl2.networks.encoders.networks import Encoder, PixelMultiplexer, PixelMultiplexerEncoder, PixelMultiplexerDecoder, AuxPixelMultiplexerDecoder
@@ -379,6 +379,8 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
             )
         else:
             critic_def_decoder = PixelMultiplexerDecoder(network=network_def)
+
+        # PixelMultiplexerDecoder
 
         critic_key_encoder, critic_key_decoder = jax.random.split(critic_key, 2)
         critic_def_encoder_init = critic_def_encoder.init(critic_key_encoder, observations)

@@ -97,7 +97,6 @@ def main(_):
     env = gym.wrappers.RecordEpisodeStatistics(env, deque_size=1)
     eval_env = make_env(FLAGS.task, FLAGS.ep_length, FLAGS.action_repeat, FLAGS.proprio, FLAGS.camera_angle)
 
-
     print('Environment Created')
     kwargs = dict(FLAGS.config.model_config)
     if kwargs.pop('cosine_decay', False):
@@ -289,7 +288,7 @@ export MUJOCO_GL="egl"
 
 XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
 --task "standardkitchen_microwave+kettle+light switch+slide cabinet" \
---datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/kitchen2/kitchen_demos_multitask_lexa_view_extra_images_npz \
+--datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/kitchen2/kitchen_demos_multitask_lexa_view_extra_images_npz/friday_kettle_bottomknob_hinge_slide_first5 \
 --tqdm=true \
 --project vd5rl_kitchen \
 --algorithm calql \
