@@ -15,6 +15,8 @@ from jaxrl2.evaluation import evaluate_kitchen
 
 from jaxrl2.agents.pixel_cql import PixelCQLLearner
 from jaxrl2.agents.pixel_iql import PixelIQLLearner
+from jaxrl2.agents.pixel_bc import PixelBCLearner
+from jaxrl2.agents.cql_encodersep_parallel import PixelCQLLearnerEncoderSepParallel
 
 import jaxrl2.wrappers.combo_wrappers as wrappers
 from jaxrl2.wrappers.frame_stack import FrameStack
@@ -102,7 +104,6 @@ def main(_):
         kwargs['decay_steps'] = FLAGS.max_gradient_steps
 
     # assert kwargs["cnn_groups"] == 1
-
     print(globals()[FLAGS.config.model_constructor])
     agent = globals()[FLAGS.config.model_constructor](
         FLAGS.seed, env.observation_space.sample(), env.action_space.sample(),
@@ -142,11 +143,20 @@ def main(_):
 def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
     suite, task = task.split('_', 1)
 
-    if "kitchen" in suite:
+    if "singleviewkitchen" in suite:
         assert not proprio
         assert action_repeat == 1
         tasks_list = task.split("+")
         env = wrappers.Kitchen(task=tasks_list, size=(64, 64), proprio=proprio)
+        env = wrappers.ActionRepeat(env, action_repeat)
+        env = wrappers.NormalizeActions(env)
+        env = wrappers.TimeLimit(env, ep_length)
+        env = FrameStack(env, num_stack=3)
+    elif "standardkitchen" in suite:
+        # assert proprio
+        assert action_repeat == 1
+        tasks_list = task.split("+")
+        env = wrappers.KitchenMultipleViews(task=tasks_list, size=(128, 128), camera_ids=[0, 1], proprio=proprio)
         env = wrappers.ActionRepeat(env, action_repeat)
         env = wrappers.NormalizeActions(env)
         env = wrappers.TimeLimit(env, ep_length)
@@ -174,20 +184,31 @@ def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
         raise ValueError(f"Unsupported environment suite: \"{suite}\".")
     return env
 
-def load_episode(episode_file, task):
+def load_episode(episode_file, task, tasks_list):
     with open(episode_file, 'rb') as f:
         episode = np.load(f, allow_pickle=True)
 
-        if task is None:
+        if tasks_list is None:
             episode = {k: episode[k] for k in episode.keys() if k not in ['image_128'] and "metadata" not in k and "str" not in episode[k].dtype.name and episode[k].dtype != object}
         else:
             if "reward" in episode:
                 rewards = episode["reward"]
             else:
-                rewards = sum([episode[f"reward {obj}"] for obj in task])
+                rewards = sum([episode[f"reward {obj}"] for obj in tasks_list])
 
             episode = {k: episode[k] for k in episode.keys() if k not in ['image_128'] and "metadata" not in k and "str" not in episode[k].dtype.name and episode[k].dtype != object and "init_q" not in k and "observation" not in k and "terminal" not in k and "goal" not in k}
             episode["reward"] = rewards
+
+
+    # extra_image_camera_0_rgb
+    # extra_image_camera_1_rgb
+    # extra_image_camera_gripper_rgb
+
+        if "standardkitchen" in task:
+            keys = ["extra_image_camera_0_rgb", "extra_image_camera_1_rgb", "extra_image_camera_gripper_rgb"]
+            img = np.concatenate([episode[key] for key in keys], axis=-1)
+            episode["image"] = img
+
     return episode
 
 def load_data(replay_buffer, offline_dataset_path, task, ep_length, num_stack, proprio, debug=False):
@@ -200,7 +221,7 @@ def load_data(replay_buffer, offline_dataset_path, task, ep_length, num_stack, p
     total_transitions = 0
 
     for episode_file in tqdm.tqdm(episode_files, total=len(episode_files), desc="Loading offline data"):
-        episode = load_episode(episode_file, tasks_list)
+        episode = load_episode(episode_file, task, tasks_list)
 
         # observation, done = env.reset(), False
         frames = collections.deque(maxlen=num_stack)
@@ -265,6 +286,36 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia-000
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
 export MUJOCO_GL="egl"
+
+XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
+--task "standardkitchen_microwave+kettle+light switch+slide cabinet" \
+--datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/kitchen2/kitchen_demos_multitask_lexa_view_extra_images_npz \
+--tqdm=true \
+--project vd5rl_kitchen \
+--algorithm calql \
+--proprio=false \
+--description default \
+--eval_episodes 1 \
+--eval_interval 200 \
+--max_gradient_steps 10_000 \
+--replay_buffer_size 600_000 \
+--seed 0 \
+--debug=true
+
+
+XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
+--task "singleviewkitchen_microwave+kettle+light switch+slide cabinet" \
+--datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/kitchen2/kitchen_demos_multitask_npz \
+--tqdm=true \
+--project vd5rl_kitchen \
+--algorithm cql \
+--description default \
+--eval_episodes 1 \
+--eval_interval 200 \
+--max_gradient_steps 10_000 \
+--replay_buffer_size 600_000 \
+--seed 0 \
+--debug=true
 
 XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
 --task "kitchen_microwave+kettle+light switch+slide cabinet" \

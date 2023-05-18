@@ -51,7 +51,7 @@ def _flatten_dict_special_v2(x, only_pixels=False):
     if 'state' in observation and not only_pixels:
         obs.append(
             jnp.reshape(observation['state'], [*observation['state'].shape[:-2], np.prod(observation['state'].shape[-2:])]))
-    
+
     if 'prev_action' in observation:
         obs.append(
             jnp.reshape(observation['prev_action'], [*observation['prev_action'].shape[:-2], np.prod(observation['prev_action'].shape[-2:])]))
@@ -63,7 +63,7 @@ def _flatten_dict_special_v2(x, only_pixels=False):
         return pixels, action, pixels
 
     return jnp.concatenate(obs, -1), action, pixels
-        
+
 
 class MLP(nn.Module):
     hidden_dims: Sequence[int]
@@ -80,7 +80,7 @@ class MLP(nn.Module):
 
         for i, size in enumerate(self.hidden_dims):
             x = nn.Dense(size, kernel_init=default_init(self.init_scale))(x)
-            
+
             if i + 1 < len(self.hidden_dims) or self.activate_final:
                 x = self.activations(x)
                 if self.dropout_rate is not None:
@@ -118,7 +118,7 @@ class MLPActionSep(nn.Module):
                 x = nn.Dense(size, kernel_init=default_init(1e-2))(x_used)
             else:
                 x = nn.Dense(size, kernel_init=default_init())(x_used)
-            
+
 
             print ('FF layers: ', x_used.shape, x.shape)
             if i + 1 < len(self.hidden_dims) or self.activate_final:

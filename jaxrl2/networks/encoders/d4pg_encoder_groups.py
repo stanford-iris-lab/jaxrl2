@@ -15,7 +15,7 @@ class D4PGEncoderGroups(nn.Module):
     groups: int = 1
 
     @nn.compact
-    def __call__(self, observations: jnp.ndarray) -> jnp.ndarray:
+    def __call__(self, observations: jnp.ndarray, training=False) -> jnp.ndarray:
         assert len(self.features) == len(self.strides)
 
         x = observations.astype(jnp.float32) / 255.0

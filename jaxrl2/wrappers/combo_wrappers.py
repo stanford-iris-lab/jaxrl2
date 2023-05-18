@@ -249,11 +249,39 @@ OBS_ELEMENT_GOALS = {
 
 BONUS_THRESH = 0.3
 
+CAMERAS = {
+    0: dict(distance=2.1, lookat=[-0.4, 0.5, 2.0], azimuth=70,
+            elevation=-37.5),
+    1: dict(distance=2.2,
+            lookat=[-0.2, 0.75, 2.0],
+            azimuth=150,
+            elevation=-30.0),
+    2: dict(distance=4.5, azimuth=-66, elevation=-65),
+    3: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=70, elevation=-35
+            ),  # original, as in https://relay-policy-learning.github.io/
+    4: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=70,
+            elevation=-50),  # angled up to get a more top-down view
+    5: dict(distance=2.65, lookat=[0, 0, 2.0], azimuth=90, elevation=-60
+            ),  # similar to appendix D of https://arxiv.org/pdf/1910.11956.pdf
+    6: dict(distance=2.5, lookat=[-0.2, 0.5, 2.0], azimuth=90, elevation=-60
+            ),  # 3-6 are first person views at different angles and distances
+    7: dict(
+        distance=2.5, lookat=[-0.2, 0.5, 2.0], azimuth=90, elevation=-45
+    ),  # problem w/ POV is that the knobs can be hidden by the hinge drawer and arm
+    8: dict(distance=2.9, lookat=[-0.05, 0.5, 2.0], azimuth=90, elevation=-50),
+    9: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=90,
+            elevation=-50),  # move back so less of cabinets
+    10: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=90, elevation=-35),
+    11: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=90, elevation=-10)
+}
+
 class Kitchen:
     def __init__(self, task=['microwave'], size=(64, 64), proprio=True):
         # from .RPL.adept_envs import adept_envs
         # sys.path.append("/workdisk/code/relay-policy-learning/adept_envs")
-        sys.path.append("../../relay-policy-learning/adept_envs")
+        # sys.path.append("../../relay-policy-learning/adept_envs")
+        sys.path.append("../../finetuning_benchmark/benchmark/domains/relay-policy-learning/adept_envs")
+
         import adept_envs
         self._env = gym.make('kitchen_relax_rpl-v1')
         self._task = task
@@ -283,7 +311,7 @@ class Kitchen:
         obs_dict = dict(pixels=img)
 
         if self._proprio:
-            obs_dict["proprio"] = obs[:9]
+            obs_dict["states"] = obs[:9]
 
         reward = sum([reward_dict[obj] for obj in self._task])
 
@@ -301,7 +329,7 @@ class Kitchen:
         obs_dict = dict(pixels=img)
 
         if self._proprio:
-            obs_dict["proprio"] = obs[:9]
+            obs_dict["states"] = obs[:9]
 
         return obs_dict
 
@@ -322,8 +350,8 @@ class Kitchen:
         if mode =='rgb_array':
             # camera = engine.MovableCamera(self.sim, 1920, 2560)
             camera = engine.MovableCamera(self._env.sim, size[0], size[1])
-            # camera.set_pose(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=70, elevation=-35)
-            camera.set_pose(distance=1.86, lookat=[-0.3, .5, 2.], azimuth=90, elevation=-60)
+            # camera.set_pose(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=70, elevation=-35) # original?
+            camera.set_pose(distance=1.86, lookat=[-0.3, .5, 2.], azimuth=90, elevation=-60) # Lexa?
             img = camera.render()
             return img
         else:
@@ -337,10 +365,105 @@ class Kitchen:
         spaces['pixels'] = gym.spaces.Box(0, 255, (self._img_h, self._img_w, 3), dtype=np.uint8)
 
         if self._proprio:
-            spaces["proprio"] = gym.spaces.Box(-np.inf, np.inf, (9,), dtype=np.float32)
+            spaces["states"] = gym.spaces.Box(-np.inf, np.inf, (9,), dtype=np.float32)
 
         return gym.spaces.Dict(spaces)
 
+
+class KitchenMultipleViews(Kitchen):
+    def __init__(self, *args, camera_ids=[0, 1], **kwargs):
+        self.camera_ids = camera_ids
+        super().__init__(*args, **kwargs)
+        self.add_cameras()
+        # self.render = self.render2
+
+
+    def add_cameras(self, camera_id=None):
+        if camera_id is not None:
+            self.camera_ids.append(camera_id)
+        self.cameras = dict()
+        for camera_id in self.camera_ids:
+            camera = engine.MovableCamera(self.sim,
+                                          height=self._img_h,
+                                          width=self._img_w)
+            camera.set_pose(**CAMERAS[camera_id])
+            self.cameras['camera_{}'.format(camera_id)] = camera
+        self.cameras['camera_gripper'] = engine.Camera(
+            self.sim,
+            height=self._img_h,
+            width=self._img_w,
+            camera_id='gripper_camera_rgb')
+
+    def get_observation_space(self):
+        spaces = {}
+        spaces['pixels'] = gym.spaces.Box(0, 255, (self._img_h, self._img_w, 3 * (len(self.camera_ids) + 1)), dtype=np.uint8)
+        # spaces['pixels'] = gym.spaces.Box(0, 255, (self._img_h, self._img_w, 3, dtype=np.uint8)
+
+        if self._proprio:
+            spaces["states"] = gym.spaces.Box(-np.inf, np.inf, (9,), dtype=np.float32)
+
+        return gym.spaces.Dict(spaces)
+
+    def reset(self, *args, **kwargs):
+        obs = self._env.reset(*args, **kwargs)
+
+        # img = self.render(mode='rgb_array', size=(self._img_h, self._img_w))
+        imgs = self.render_extra_views("rgb")
+        # keys = sorted(list(imgs.keys()))
+        keys = ['camera_0_rgb', 'camera_1_rgb', 'camera_gripper_rgb']
+        img = np.concatenate([imgs[key] for key in keys], axis=2)
+        obs_dict = dict(pixels=img)
+
+        if self._proprio:
+            obs_dict["states"] = obs[:9]
+
+        return obs_dict
+
+    def step(self, *args, **kwargs):
+        obs, reward, done, info = self._env.step(*args, **kwargs)
+        reward_dict = self._compute_reward_dict(obs)
+        # img = self.render(mode='rgb_array', size=(self._img_h, self._img_w))
+        imgs = self.render_extra_views("rgb")
+        # keys = sorted(list(imgs.keys()))
+        keys = ['camera_0_rgb', 'camera_1_rgb', 'camera_gripper_rgb']
+        img = np.concatenate([imgs[key] for key in keys], axis=2)
+        obs_dict = dict(pixels=img)
+
+        if self._proprio:
+            obs_dict["states"] = obs[:9]
+
+        reward = sum([reward_dict[obj] for obj in self._task])
+
+        info.update({"reward " + key:float(val) for key, val in reward_dict.items()})
+        # info.update({"reward " + key:1 if ("kettle" in key or "burner" in key) else float(val) for key, val in reward_dict.items()})
+
+
+        # obs_dict.update({"reward " + key:float(val) for key, val in reward_dict.items()})
+        return obs_dict, reward, done, info
+
+
+    def render_extra_views(self, mode='rgb', depth=False, segmentation=False):
+#         print("In render 2")
+        imgs = {}
+        if 'rgb' in mode:
+            # http://www.mujoco.org/book/APIreference.html#mjvOption
+            # https://github.com/deepmind/dm_control/blob/9e0fe0f0f9713a2a993ca78776529011d6c5fbeb/dm_control/mujoco/engine.py#L200
+            # mjtRndFlag(mjRND_SHADOW=0, mjRND_WIREFRAME=1, mjRND_REFLECTION=2, mjRND_ADDITIVE=3, mjRND_SKYBOX=4, mjRND_FOG=5, mjRND_HAZE=6, mjRND_SEGMENT=7, mjRND_IDCOLOR=8, mjNRNDFLAG=9)
+
+            for camera_id, camera in self.cameras.items():
+                img_rgb = camera.render(render_flag_overrides=dict(
+                    skybox=False, fog=False, haze=False))
+                imgs[camera_id + "_rgb"] = img_rgb
+
+        if 'depth' in mode:
+            for camera_id, camera in self.cameras.items():
+                img_depth = camera.render(depth=True, segmentation=False)
+                imgs[camera_id + "_depth"] = np.clip(img_depth, 0.0, 4.0)
+
+        if 'human' in mode:
+            self.renderer.render_to_window()  # adept_envs.mujoco_env.MujocoEnv.render
+
+        return imgs
 
 class Gym:
     def __init__(self, name, config, size=(64, 64)):

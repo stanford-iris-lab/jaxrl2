@@ -30,14 +30,15 @@ from jaxrl2.types import Params, PRNGKey
 
 from jaxrl2.agents.agent import Agent
 from jaxrl2.networks.learned_std_normal_policy import LearnedStdNormalPolicy, LearnedStdTanhNormalPolicy
-from jaxrl2.agents.drq.augmentations import batched_random_crop, color_transform
-from jaxrl2.agents.common import _unpack
+from jaxrl2.agents.drq.augmentations import batched_random_crop#, color_transform ###===### ###---###
+# from jaxrl2.agents.common import _unpack ###===### ###---###
 from jaxrl2.agents.drq.drq_learner import _share_encoder
 from jaxrl2.networks.encoders.networks import Encoder, PixelMultiplexer, PixelMultiplexerEncoder, PixelMultiplexerDecoder, AuxPixelMultiplexerDecoder
 from jaxrl2.networks.encoders.networks import PixelMultiplexerDecoderWithDropout, PixelMultiplexerEncoderWithoutFinal
 from jaxrl2.networks.encoders.impala_encoder import ImpalaEncoder, BiggerImpalaEncoder, BiggestImpalaEncoder
 from jaxrl2.networks.encoders.resnet_encoderv1 import ResNet18, ResNet34, ResNetSmall
 from jaxrl2.networks.encoders.resnet_encoderv2 import ResNetV2Encoder
+from jaxrl2.networks.encoders import D4PGEncoderGroups ###===### ###---###
 from jaxrl2.data.dataset import DatasetDict
 from jaxrl2.networks.normal_policy import NormalPolicy
 from jaxrl2.networks.values import StateActionEnsemble, StateValue, AuxStateActionEnsemble
@@ -63,7 +64,7 @@ def sync_batch_stats(state):
 @functools.partial(jax.pmap, static_broadcasted_argnums=list(range(8,25)), axis_name='pmap')
 def _update_jit(
     rng: PRNGKey, actor: TrainState, critic_encoder: TrainState,
-    critic_decoder: TrainState, target_critic_encoder_params: Params, 
+    critic_decoder: TrainState, target_critic_encoder_params: Params,
     target_critic_decoder_params: Params, temp: TrainState, batch: TrainState,
     discount: float, tau: float, target_entropy: float, backup_entropy: bool,
     critic_reduction: str, cql_alpha: float, max_q_backup: bool,
@@ -99,10 +100,10 @@ def _update_jit(
             batch = batch.copy(add_or_replace={'next_observations': next_observations})
 
     key, rng = jax.random.split(rng)
-    
+
     target_critic_encoder = critic_encoder.replace(params=target_critic_encoder_params)
     target_critic_decoder = critic_decoder.replace(params=target_critic_decoder_params)
-    
+
     (new_critic_encoder, new_critic_decoder), critic_info = update_critic(
         key,
         actor,
@@ -131,17 +132,17 @@ def _update_jit(
     if hasattr(new_critic_decoder, 'batch_stats') and new_critic_decoder.batch_stats is not None:
         print ('Syncing batch stats for critic decoder')
         new_critic_decoder = sync_batch_stats(new_critic_decoder)
-    
+
     new_target_critic_encoder_params = soft_target_update(new_critic_encoder.params, target_critic_encoder_params, tau)
     new_target_critic_decoder_params = soft_target_update(new_critic_decoder.params, target_critic_decoder_params, tau)
 
     rng, key = jax.random.split(rng)
     new_actor, actor_info = update_actor(key, actor, new_critic_encoder, new_critic_decoder, temp, batch, cross_norm=cross_norm,
                                          use_gaussian_policy=use_gaussian_policy)
-    
+
     if hasattr(actor, 'batch_stats') and actor.batch_stats is not None:
         actor = sync_batch_stats(actor)
-    
+
     new_temp, alpha_info = update_temperature(temp, actor_info['entropy'], target_entropy)
 
     return rng, new_actor, (new_critic_encoder, new_critic_decoder), (new_target_critic_encoder_params, new_target_critic_decoder_params), new_temp, {
@@ -152,7 +153,7 @@ def _update_jit(
 
 
 class PixelCQLLearnerEncoderSepParallel(Agent):
-    
+
     def __init__(self,
                  seed: int,
                  observations: jnp.ndarray,
@@ -163,8 +164,10 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
                  decay_steps: Optional[int] = None,
                  hidden_dims: Sequence[int] = (256, 256),
                  cnn_features: Sequence[int] = (32, 32, 32, 32),
+                 cnn_filters: Sequence[int] = (3, 3, 3, 3),
                  cnn_strides: Sequence[int] = (2, 1, 1, 1),
                  cnn_padding: str = 'VALID',
+                 cnn_groups: int = 1, ###===### ###---###
                  latent_dim: int = 100,
                  discount: float = 0.99,
                  cql_alpha: float = 0.0,
@@ -251,6 +254,8 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
 
         if encoder_type == 'small':
             encoder_def = Encoder(cnn_features, cnn_strides, cnn_padding)
+        elif encoder_type == "d4pg":
+            encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups) ###===### ###---###
         elif encoder_type == 'impala':
             print('using impala')
             encoder_def = ImpalaEncoder(use_multiplicative_cond=use_multiplicative_cond)
@@ -279,9 +284,11 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
             encoder_def = ResNetV2Encoder(stage_sizes=(3, 4, 6, 3), norm=encoder_norm)
         else:
             raise ValueError('encoder type not found!')
-        
+
         if policy_encoder_type == 'small':
             policy_encoder_def = Encoder(cnn_features, cnn_strides, cnn_padding)
+        elif policy_encoder_type == "d4pg":
+            policy_encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups) ###===### ###---###
         elif policy_encoder_type == 'impala':
             print('using impala')
             policy_encoder_def = ImpalaEncoder(use_multiplicative_cond=policy_use_multiplicative_cond)
@@ -299,7 +306,7 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
             policy_encoder_def = ResNet18(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax,
                                           softmax_temperature=softmax_temperature,
                                           use_spatial_learned_embeddings=use_spatial_learned_embeddings,
-                                          use_multiplicative_cond=policy_use_multiplicative_cond) 
+                                          use_multiplicative_cond=policy_use_multiplicative_cond)
         elif policy_encoder_type == 'resnet_34_v1':
             policy_encoder_def = ResNet34(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax,
                                           softmax_temperature=softmax_temperature,
@@ -322,7 +329,7 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
             policy_def = NormalPolicy(hidden_dims, action_dim, dropout_rate=dropout_rate,
                                       std=self.std_scale_for_gaussian_policy)
         else:
-            policy_def = LearnedStdTanhNormalPolicy(hidden_dims,action_dim, dropout_rate=dropout_rate)
+            policy_def = LearnedStdTanhNormalPolicy(hidden_dims, action_dim, dropout_rate=dropout_rate)
 
         actor_def = PixelMultiplexer(encoder=policy_encoder_def,
                                      network=policy_def,
@@ -338,7 +345,7 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
                                   params=actor_params,
                                   batch_stats=actor_batch_stats,
                                   tx=optax.adam(learning_rate=actor_lr))
-        
+
         actor = flax.jax_utils.replicate(actor)
 
         if self.use_basis_projection:
@@ -362,29 +369,29 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
                 use_multiplicative_cond=use_multiplicative_cond,
                 stop_gradient=freeze_encoders
                 )
-        
+
         if self.use_basis_projection:
             critic_def_decoder = AuxPixelMultiplexerDecoder(network=network_def)
         elif self.q_dropout_rate > 0.0:
             critic_def_decoder = PixelMultiplexerDecoderWithDropout(
-                network=network_def, 
+                network=network_def,
                 dropout_rate=self.q_dropout_rate
             )
         else:
             critic_def_decoder = PixelMultiplexerDecoder(network=network_def)
-        
+
         critic_key_encoder, critic_key_decoder = jax.random.split(critic_key, 2)
         critic_def_encoder_init = critic_def_encoder.init(critic_key_encoder, observations)
         critic_encoder_params = critic_def_encoder_init['params']
         critic_encoder_batch_stats = critic_def_encoder_init['batch_stats'] if 'batch_stats' in critic_def_encoder_init else None
-        
+
         if 'batch_stats' in critic_def_encoder_init:
             embed_obs, _ = critic_def_encoder.apply(
                 {'params': critic_encoder_params,
                 'batch_stats': critic_def_encoder_init['batch_stats']}, observations, mutable=['batch_stats'])
         else:
             embed_obs = critic_def_encoder.apply({'params': critic_encoder_params}, observations)
-        
+
         critic_def_decoder_init = critic_def_decoder.init(critic_key_decoder, embed_obs, actions)
         critic_decoder_params = critic_def_decoder_init['params']
         critic_decoder_batch_stats = critic_def_decoder_init['batch_stats'] if 'batch_stats' in critic_def_decoder_init else None
@@ -393,12 +400,12 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
                                    params=critic_encoder_params,
                                    batch_stats=critic_encoder_batch_stats,
                                    tx=optax.adam(learning_rate=critic_lr))
-        
+
         critic_decoder = TrainState.create(apply_fn=critic_def_decoder.apply,
                                    params=critic_decoder_params,
                                    batch_stats=critic_decoder_batch_stats,
                                    tx=optax.adam(learning_rate=critic_lr))
-        
+
         critic_encoder = flax.jax_utils.replicate(critic_encoder)
         critic_decoder = flax.jax_utils.replicate(critic_decoder)
 
@@ -417,22 +424,22 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
         self._critic_encoder = critic_encoder
         self._critic_decoder = critic_decoder
         self._critic = (critic_encoder, critic_decoder)
-        
+
         self.aug_next = aug_next
-        
+
         self._temp = temp
         self._target_critic_encoder_params = target_critic_encoder_params
         self._target_critic_decoder_params = target_critic_decoder_params
         self._target_critic_params = (target_critic_encoder_params, target_critic_decoder_params)
-        
+
         self._cql_alpha = cql_alpha
         print ('Discount: ', self.discount)
         print ('CQL Alpha: ', self._cql_alpha)
         print('Method: ', self.method, 'Const: ', self.method_const)
-        
+
     def unreplicate(self):
         if not self.is_replicated:
-            raise RuntimeError('Not Replicated') 
+            raise RuntimeError('Not Replicated')
         # else:
         #     print('UNREPLICATING '*5)
         self._actor = flax.jax_utils.unreplicate(self._actor)
@@ -443,10 +450,10 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
         self._critic = (self._critic_encoder, self._critic_decoder)
         self._target_critic_params = (self._target_critic_encoder_params, self._target_critic_decoder_params)
         self.is_replicated=False
-    
+
     def replicate(self):
         if self.is_replicated:
-            raise RuntimeError('Already Replicated') 
+            raise RuntimeError('Already Replicated')
         # else:
         #     print('REPLICATING '*5)
         self._actor = flax.jax_utils.replicate(self._actor)
@@ -467,37 +474,37 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
             copied_keys = self._rng
             if self.is_replicated:
                 self.unreplicate()
-        
+
         new_rng, new_actor, new_critic, new_target_critic_params, new_temp, info = _update_jit(
-            copied_keys, 
-            self._actor, 
-            self._critic_encoder, 
-            self._critic_decoder, 
-            self._target_critic_encoder_params, 
+            copied_keys,
+            self._actor,
+            self._critic_encoder,
+            self._critic_decoder,
+            self._target_critic_encoder_params,
             self._target_critic_decoder_params,
-            self._temp, 
-            batch, 
-            self.discount, 
-            self.tau, 
+            self._temp,
+            batch,
+            self.discount,
+            self.tau,
             self.target_entropy,
-            self.backup_entropy, 
-            self.critic_reduction, 
-            self._cql_alpha, 
+            self.backup_entropy,
+            self.critic_reduction,
+            self._cql_alpha,
             self.max_q_backup,
             self.dr3_coefficient,
-            self.random_crop and not self.debug,  
-            self.color_jitter and not self.debug, 
-            self.cross_norm, 
-            self.aug_next and not self.debug, 
-            self.basis_projection_coefficient, 
-            self.use_basis_projection, 
-            self.use_gaussian_policy, 
+            self.random_crop and not self.debug,
+            self.color_jitter and not self.debug,
+            self.cross_norm,
+            self.aug_next and not self.debug,
+            self.basis_projection_coefficient,
+            self.use_basis_projection,
+            self.use_gaussian_policy,
             self.min_q_version,
             self.bound_q_with_mc)
-        
+
         new_critic_encoder, new_critic_decoder = new_critic
         new_target_critic_encoder_params, new_target_critic_decoder_params = new_target_critic_params
-        
+
         if not self.debug:
             info = {k:v[0] for k,v in info.items()}
             self._rng = new_rng[0]
@@ -506,11 +513,11 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
         self._critic_encoder = new_critic_encoder
         self._critic_decoder = new_critic_decoder
         self._critic = (new_critic_encoder, new_critic_decoder)
-        
+
         self._target_critic_encoder_params = new_target_critic_encoder_params
         self._target_critic_decoder_params = new_target_critic_decoder_params
         self._target_critic_params = (new_target_critic_encoder_params, new_target_critic_decoder_params)
-        
+
         self._temp = new_temp
 
         return info
@@ -551,7 +558,7 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
             target_q_pred = []
             bellman_loss = []
             task_ids = []
-            
+
             # Do the frame stacking thing for observations
             # images = np.lib.stride_tricks.sliding_window_view(observations.pop('pixels'), num_stack + 1, axis=0)
 
@@ -564,12 +571,12 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
                 for k, v in observations.items():
                     if 'pixels' not in k:
                         obs_dict[k] = v[t][None]
-                    
+
                 next_obs_dict = {'pixels': next_obs_pixels[None]}
                 for k, v in next_observations.items():
                     if 'pixels' not in k:
                         next_obs_dict[k] = v[t][None]
-                
+
                 q_value = get_q_value(action, obs_dict, self._critic_encoder, self._critic_decoder)
                 next_action = get_action(next_obs_dict, self._actor)
                 target_q_value = get_q_value(next_action, next_obs_dict, target_critic_encoder, target_critic_decoder)
@@ -578,7 +585,7 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
                 target_q_pred.append(target_q_value.item())
                 bellman_loss.append(((q_value-target_q_value)**2).mean().item())
                 task_ids.append(np.argmax(observations['task_id']))
-            
+
             # print ('lengths for verification: ', len(task_ids), len(q_pred), len(masks), len(bellman_loss))
 
             traj_images.append(make_visual(q_pred, rewards, observations['pixels'], masks, target_q_pred, bellman_loss, task_ids))
@@ -608,9 +615,9 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
         self._target_critic_encoder_params, self._target_critic_decoder_params = output_dict['target_critic_params']
         self._target_critic_params = (self._target_critic_encoder_params, self._target_critic_decoder_params)
         self._temp = output_dict['temp']
-        
+
         self.is_replicated = False # stored in the checkpoint, so we need to reset this
-        
+
         self.replicate()
 
         # stored as 8xtemp_size so unreplicate and then replicate
@@ -618,19 +625,49 @@ class PixelCQLLearnerEncoderSepParallel(Agent):
         self._temp = flax.jax_utils.replicate(self._temp)
 
         print('restored from ', dir)
-        
+
+    ###===###
+    @property
+    def _save_dict(self):
+        save_dict = {
+            'critic': self._critic,
+            'target_critic_params': self._target_critic_params,
+            'actor': self._actor,
+            "temp":self._temp,
+        }
+        return save_dict
+
+    def restore_checkpoint(self, dir):
+        if os.path.isfile(dir):
+            checkpoint_file = dir
+        else:
+            def sort_key_fn(checkpoint_file):
+                chkpt_name = checkpoint_file.split("/")[-1]
+                return int(chkpt_name[len("checkpoint"):])
+
+            checkpoint_files = glob(os.path.join(dir, "checkpoint*"))
+            checkpoint_files = sorted(checkpoint_files, key=sort_key_fn)
+            checkpoint_file = checkpoint_files[-1]
+
+        output_dict = checkpoints.restore_checkpoint(checkpoint_file, self._save_dict)
+        self._critic = output_dict['critic']
+        self._target_critic_params = output_dict['target_critic_params']
+        self._actor = output_dict['actor']
+        self._temp = output_dict["temp"]
+    ###---###
+
 
 @functools.partial(jax.jit)
 def get_action(obs_dict, actor):
     # print(f'{images.shape=}')
     # print(f'{images[..., None]=}')
     key_dropout, key_pi = jax.random.split(jax.random.PRNGKey(0))
-    
+
     if actor.batch_stats is not None:
         dist = actor.apply_fn({'params': actor.params, 'batch_stats': actor.batch_stats}, obs_dict, rngs={'dropout': key_dropout})
     else:
         dist = actor.apply_fn({'params': actor.params}, obs_dict, rngs={'dropout': key_dropout})
-        
+
     actions, policy_log_probs = dist.sample_and_log_prob(seed=key_pi)
     return actions
 
@@ -638,14 +675,14 @@ def get_action(obs_dict, actor):
 def get_q_value(actions, obs_dict, critic_encoder, critic_decoder):
     if critic_encoder.batch_stats is not None:
         embed_obs, _ = critic_encoder.apply_fn({'params': critic_encoder.params, 'batch_stats': critic_encoder.batch_stats}, obs_dict, mutable=['batch_stats'])
-    else:    
+    else:
         embed_obs = critic_encoder.apply_fn({'params': critic_encoder.params}, obs_dict)
-        
+
     if critic_decoder.batch_stats is not None:
         q_pred, _ = critic_decoder.apply_fn({'params': critic_decoder.params, 'batch_stats': critic_decoder.batch_stats}, embed_obs, actions, mutable=['batch_stats'])
-    else:    
+    else:
         q_pred = critic_decoder.apply_fn({'params': critic_decoder.params}, embed_obs, actions)
-        
+
     return q_pred
 
 def np_unstack(array, axis):
@@ -671,27 +708,27 @@ def make_visual(q_estimates, rewards, images, masks, target_q_pred, bellman_loss
     sel_images = np.concatenate(np_unstack(sel_images, 0), 1)
 
     axs[0].imshow(sel_images)
-    
+
     axs[1].plot(q_estimates_np[:, 0], linestyle='--', marker='o')
     axs[1].plot(q_estimates_np[:, 1], linestyle='--', marker='o')
     axs[1].set_ylabel('q values')
-    
+
     axs[2].plot(target_q_pred, linestyle='--', marker='o')
     axs[2].set_ylabel('target_q_pred')
     axs[2].set_xlim([0, len(target_q_pred)])
-    
+
     axs[3].plot(bellman_loss, linestyle='--', marker='o')
     axs[3].set_ylabel('bellman_loss')
     axs[3].set_xlim([0, len(bellman_loss)])
-    
+
     axs[4].plot(rewards, linestyle='--', marker='o')
     axs[4].set_ylabel('rewards')
     axs[4].set_xlim([0, len(rewards)])
-    
+
     axs[5].plot(masks, linestyle='--', marker='o')
     axs[5].set_ylabel('masks')
     axs[5].set_xlim([0, len(masks)])
-    
+
     axs[6].plot(task_ids, linestyle='--', marker='o')
     axs[6].set_ylabel('task_ids')
     axs[6].set_xlim([0, len(masks)])

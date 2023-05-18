@@ -171,6 +171,7 @@ class PixelCQLLearner(Agent):
             latent_dim=latent_dim,
             stop_gradient=share_encoder,
         )
+
         actor_params = actor_def.init(actor_key, observations)["params"]
         actor = TrainState.create(
             apply_fn=actor_def.apply,

@@ -32,6 +32,8 @@ class PixelMultiplexer(nn.Module):
             # We do not update conv layers with policy gradients.
             x = jax.lax.stop_gradient(x)
 
+        # print("x.shape:", x.shape)
+
         x = nn.Dense(self.latent_dim, kernel_init=default_init())(x)
         x = nn.LayerNorm()(x)
         x = nn.tanh(x)
