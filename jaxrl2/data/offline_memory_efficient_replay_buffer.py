@@ -33,6 +33,7 @@ class OfflineMemoryEfficientReplayBuffer(MemoryEfficientReplayBuffer):
         file = self.np_random.choice(glob.glob(self._data_url + "*.pkl"))
         episode = np.load(file, allow_pickle=True)
         frames = collections.deque(maxlen=self._num_stack)
+        import pdb; pdb.set_trace()
         for _ in range(self._num_stack):
             frames.append(
                 np.concatenate(

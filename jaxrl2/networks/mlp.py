@@ -75,9 +75,9 @@ class MLP(nn.Module):
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, training: bool = False) -> jnp.ndarray:
-        print("x.keys():", x.keys())
-        if "states" in x:
-            print("x['states'].keys():", x['states'].keys())
+        # print("x.keys():", x.keys())
+        # if "states" in x:
+        #     print("x['states'].keys():", x['states'].keys())
         x = _flatten_dict(x)
         print('mlp post flatten', x.shape)
 

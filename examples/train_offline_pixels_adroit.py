@@ -11,7 +11,7 @@ from absl import app, flags
 from flax.metrics.tensorboard import SummaryWriter
 from ml_collections import config_flags
 
-from jaxrl2.evaluation import evaluate_kitchen
+from jaxrl2.evaluation import evaluate
 
 from jaxrl2.agents.pixel_cql import PixelCQLLearner
 from jaxrl2.agents.pixel_iql import PixelIQLLearner
@@ -121,6 +121,7 @@ def main(_):
     for i in tbar:
         tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}]")
         batch = next(replay_buffer_iterator)
+        import pdb; pdb.set_trace()
         update_info = agent.update(batch)
 
         if i % FLAGS.log_interval == 0:
@@ -130,7 +131,7 @@ def main(_):
                     print(k, v)
 
         if i % FLAGS.eval_interval == 0:
-            eval_info = evaluate_kitchen(agent,
+            eval_info = evaluate(agent,
                                  eval_env,
                                  num_episodes=FLAGS.eval_episodes,
                                  progress_bar=False)
@@ -142,40 +143,14 @@ def main(_):
 def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
     suite, task = task.split('_', 1)
 
-    if "singleviewkitchen" in suite:
-        assert not proprio
-        assert action_repeat == 1
-        tasks_list = task.split("+")
-        env = wrappers.Kitchen(task=tasks_list, size=(64, 64), proprio=proprio)
-        env = wrappers.ActionRepeat(env, action_repeat)
-        env = wrappers.NormalizeActions(env)
-        env = wrappers.TimeLimit(env, ep_length)
-        env = FrameStack(env, num_stack=3)
-    elif "standardkitchen" in suite:
-        # assert proprio
-        assert action_repeat == 1
-        tasks_list = task.split("+")
-        env = wrappers.KitchenMultipleViews(task=tasks_list, size=(128, 128), camera_ids=[0, 1], proprio=proprio)
-        env = wrappers.ActionRepeat(env, action_repeat)
-        env = wrappers.NormalizeActions(env)
-        env = wrappers.TimeLimit(env, ep_length)
-        env = FrameStack(env, num_stack=3)
-    elif "adroithand" in suite:
+    if "adroithand" in suite:
         assert proprio
         assert action_repeat == 1
         if "human" in task and "cloned" in task:
             task = task.replace("-cloned", "")
 
-        env = wrappers.AdroitHand(task, 64, 64, proprio=proprio, camera_angle=camera_angle)
+        env = wrappers.AdroitHand(task, 128, 128, proprio=proprio, camera_angle=camera_angle)
         env = wrappers.ActionRepeat(env, action_repeat)
-        env = wrappers.NormalizeActions(env)
-        env = wrappers.TimeLimit(env, ep_length)
-        env = FrameStack(env, num_stack=3)
-    elif "metaworld" in suite:
-        assert not proprio
-        assert action_repeat == 2
-        env = wrappers.MetaWorldEnv(name=task, action_repeat=action_repeat, size=(64, 64))
-        # env = wrappers.ActionRepeat(env, 2)
         env = wrappers.NormalizeActions(env)
         env = wrappers.TimeLimit(env, ep_length)
         env = FrameStack(env, num_stack=3)
@@ -278,6 +253,8 @@ if __name__ == '__main__':
 
 
 """
+cd /iris/u/khatch/vd5rl/jaxrl2-irisfork/examples
+conda activate jaxrlfork
 unset LD_LIBRARY_PATH
 unset LD_PRELOAD
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.mujoco/mujoco210/bin
@@ -285,43 +262,23 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia-000
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
 export MUJOCO_GL="egl"
+export KITCHEN_DATASETS=/iris/u/khatch/vd5rl/datasets/diversekitchen
 
-XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
---task "standardkitchen_microwave+kettle+light switch+slide cabinet" \
---datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/kitchen2/kitchen_demos_multitask_lexa_view_extra_images_npz/friday_kettle_bottomknob_hinge_slide_first5 \
+
+# hammer, use camera2
+# door, use camera4
+# pen, use camera5
+# relocate, camera6
+
+
+XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_adroit.py \
+--task "adroithand_hammer-human-v0" \
+--datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/adroit_hand/hammer-human-v1/camera2/imsize_64 \
 --tqdm=true \
+--camera_angle=camera2 \
 --project vd5rl_kitchen \
 --algorithm cql \
 --proprio=true \
---description default \
---eval_episodes 1 \
---eval_interval 200 \
---max_gradient_steps 10_000 \
---replay_buffer_size 600_000 \
---seed 0 \
---debug=true
-
-
-XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
---task "singleviewkitchen_microwave+kettle+light switch+slide cabinet" \
---datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/kitchen2/kitchen_demos_multitask_npz \
---tqdm=true \
---project vd5rl_kitchen \
---algorithm cql \
---description default \
---eval_episodes 1 \
---eval_interval 200 \
---max_gradient_steps 10_000 \
---replay_buffer_size 600_000 \
---seed 0 \
---debug=true
-
-XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
---task "kitchen_microwave+kettle+light switch+slide cabinet" \
---datadir /PATH/TO/data/kitchen2/kitchen_demos_multitask_npz \
---tqdm=true \
---project vd5rl_kitchen \
---algorithm cql \
 --description default \
 --eval_episodes 1 \
 --eval_interval 200 \
