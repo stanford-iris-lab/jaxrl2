@@ -49,6 +49,7 @@ flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 5000, 'Eval interval.')
 flags.DEFINE_integer('batch_size', 256, 'Mini batch size.')
 flags.DEFINE_integer('max_gradient_steps', int(5e5), 'Number of training steps.')
+flags.DEFINE_integer('max_online_gradient_steps', int(5e5), 'Number of training steps.')
 flags.DEFINE_boolean('proprio', False, 'Save videos during evaluation.')
 
 
@@ -75,8 +76,14 @@ def main(_):
 
     if FLAGS.debug:
         FLAGS.project = "trash_results"
+        FLAGS.batch_size = 16
         FLAGS.max_gradient_steps = 500
-        FLAGS.batch_size = 32
+        FLAGS.eval_interval = 400
+        FLAGS.eval_episodes = 2
+        FLAGS.log_interval = 200
+
+        if FLAGS.max_online_gradient_steps > 0:
+            FLAGS.max_online_gradient_steps = 500
 
     save_dir = os.path.join(FLAGS.save_dir, FLAGS.project, FLAGS.task, FLAGS.algorithm, FLAGS.description, f"seed_{FLAGS.seed}")
     os.makedirs(os.path.join(save_dir, "wandb"), exist_ok=True)
@@ -89,7 +96,8 @@ def main(_):
                group=group_name,
                save_code=True,
                name=name,
-               resume=None)
+               resume=None,
+               entity="iris_intel")
 
     wandb.config.update(FLAGS)
 
@@ -100,7 +108,8 @@ def main(_):
     print('Environment Created')
     kwargs = dict(FLAGS.config.model_config)
     if kwargs.pop('cosine_decay', False):
-        kwargs['decay_steps'] = FLAGS.max_gradient_steps
+        # kwargs['decay_steps'] = FLAGS.max_gradient_steps
+        kwargs['decay_steps'] = FLAGS.max_gradient_steps + FLAGS.max_online_gradient_steps
 
     # assert kwargs["cnn_groups"] == 1
     print(globals()[FLAGS.config.model_constructor])
@@ -119,7 +128,7 @@ def main(_):
     print('Start offline training')
     tbar = tqdm.tqdm(range(1, FLAGS.max_gradient_steps + 1), smoothing=0.1, disable=not FLAGS.tqdm)
     for i in tbar:
-        tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}]")
+        tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}]  (offline)")
         batch = next(replay_buffer_iterator)
         import pdb; pdb.set_trace()
         update_info = agent.update(batch)
@@ -128,7 +137,7 @@ def main(_):
             for k, v in update_info.items():
                 if v.ndim == 0:
                     wandb.log({f'training/{k}': v}, step=i)
-                    print(k, v)
+                    # print(k, v)
 
         if i % FLAGS.eval_interval == 0:
             eval_info = evaluate(agent,
@@ -139,6 +148,72 @@ def main(_):
                 wandb.log({f'evaluation/{k}': v}, step=i)
 
     agent.save_checkpoint(os.path.join(save_dir, "offline_checkpoints"), i, -1)
+
+    if FLAGS.max_online_gradient_steps > 0:
+        print('Start online training')
+        observation, done = env.reset(), False
+        tbar = tqdm.tqdm(range(1, FLAGS.max_online_gradient_steps + 1), smoothing=0.1, disable=not FLAGS.tqdm)
+        for i in tbar:
+            tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed} (online)]")
+
+            action = agent.sample_actions(observation)
+
+            env_step = env.step(action)
+            if len(env_step) == 4:
+                next_observation, reward, done, info = env_step
+            elif len(env_step) == 5:
+                next_observation, reward, done, _, info = env_step
+            else:
+                raise ValueError(f"env_step should be length 4 or 5 but is length {len(env_step)}")
+
+            if not done or "TimeLimit.truncated" in info:
+                mask = 1.0
+            else:
+                mask = 0.0
+
+            replay_buffer.insert(
+                dict(
+                    observations=observation,
+                    actions=action,
+                    rewards=reward,
+                    masks=mask,
+                    dones=done,
+                    next_observations=next_observation,
+                )
+            )
+            observation = next_observation
+
+            if done:
+                for k, v in info["episode"].items():
+                    decode = {"r": "return", "l": "length", "t": "time"}
+                    wandb.log({f"training/{decode[k]}": v}, step=i + FLAGS.max_gradient_steps)
+                observation, done = env.reset(), False
+
+                wandb.log({f"replay_buffer/capacity": replay_buffer._capacity}, step=i + FLAGS.max_gradient_steps)
+                wandb.log({f"replay_buffer/size": replay_buffer._size}, step=i + FLAGS.max_gradient_steps)
+
+            batch = next(replay_buffer_iterator)
+            update_info = agent.update(batch)
+
+            if i % FLAGS.log_interval == 0:
+                for k, v in update_info.items():
+                    if v.ndim == 0:
+                        wandb.log({f'training/{k}': v}, step=i + FLAGS.max_gradient_steps)
+                        # print(k, v)
+
+            if i % FLAGS.eval_interval == 0:
+                eval_info = evaluate_kitchen(agent,
+                                     eval_env,
+                                     num_episodes=FLAGS.eval_episodes,
+                                     progress_bar=False)
+
+                for k, v in eval_info.items():
+                    if FLAGS.debug:
+                        v += 1000
+
+                    wandb.log({f'evaluation/{k}': v}, step=i + FLAGS.max_gradient_steps)
+
+        agent.save_checkpoint(os.path.join(save_dir, "online_checkpoints"), i + FLAGS.max_gradient_steps, -1)
 
 def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
     suite, task = task.split('_', 1)

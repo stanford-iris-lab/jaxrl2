@@ -88,7 +88,6 @@ def evaluate_kitchen(agent, env: gym.Env, num_episodes: int, progress_bar=False)
         return_info[key + "_manipulated_min"] = np.min(val)
         return_info[key + "_manipulated_std"] = np.std(val)
 
-    import pdb; pdb.set_trace()
     return return_info
 ###---###
 

@@ -49,6 +49,7 @@ flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 5000, 'Eval interval.')
 flags.DEFINE_integer('batch_size', 256, 'Mini batch size.')
 flags.DEFINE_integer('max_gradient_steps', int(5e5), 'Number of training steps.')
+flags.DEFINE_integer('max_online_gradient_steps', int(5e5), 'Number of training steps.')
 flags.DEFINE_boolean('proprio', False, 'Save videos during evaluation.')
 
 
@@ -75,8 +76,14 @@ def main(_):
 
     if FLAGS.debug:
         FLAGS.project = "trash_results"
+        FLAGS.batch_size = 16
         FLAGS.max_gradient_steps = 500
-        FLAGS.batch_size = 32
+        FLAGS.eval_interval = 400
+        FLAGS.eval_episodes = 2
+        FLAGS.log_interval = 200
+
+        if FLAGS.max_online_gradient_steps > 0:
+            FLAGS.max_online_gradient_steps = 500
 
     save_dir = os.path.join(FLAGS.save_dir, FLAGS.project, FLAGS.task, FLAGS.algorithm, FLAGS.description, f"seed_{FLAGS.seed}")
     os.makedirs(os.path.join(save_dir, "wandb"), exist_ok=True)
@@ -89,7 +96,8 @@ def main(_):
                group=group_name,
                save_code=True,
                name=name,
-               resume=None)
+               resume=None,
+               entity="iris_intel")
 
     wandb.config.update(FLAGS)
 
@@ -100,7 +108,8 @@ def main(_):
     print('Environment Created')
     kwargs = dict(FLAGS.config.model_config)
     if kwargs.pop('cosine_decay', False):
-        kwargs['decay_steps'] = FLAGS.max_gradient_steps
+        # kwargs['decay_steps'] = FLAGS.max_gradient_steps
+        kwargs['decay_steps'] = FLAGS.max_gradient_steps + FLAGS.max_online_gradient_steps
 
     # assert kwargs["cnn_groups"] == 1
     print(globals()[FLAGS.config.model_constructor])
@@ -119,7 +128,7 @@ def main(_):
     print('Start offline training')
     tbar = tqdm.tqdm(range(1, FLAGS.max_gradient_steps + 1), smoothing=0.1, disable=not FLAGS.tqdm)
     for i in tbar:
-        tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}]")
+        tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed} (offline)]")
         batch = next(replay_buffer_iterator)
         update_info = agent.update(batch)
 
@@ -127,7 +136,7 @@ def main(_):
             for k, v in update_info.items():
                 if v.ndim == 0:
                     wandb.log({f'training/{k}': v}, step=i)
-                    print(k, v)
+                    # print(k, v)
 
         if i % FLAGS.eval_interval == 0:
             eval_info = evaluate_kitchen(agent,
@@ -139,14 +148,94 @@ def main(_):
 
     agent.save_checkpoint(os.path.join(save_dir, "offline_checkpoints"), i, -1)
 
+    if FLAGS.max_online_gradient_steps > 0:
+        print('Start online training')
+        observation, done = env.reset(), False
+        tbar = tqdm.tqdm(range(1, FLAGS.max_online_gradient_steps + 1), smoothing=0.1, disable=not FLAGS.tqdm)
+        for i in tbar:
+            tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed} (online)]")
+
+            action = agent.sample_actions(observation)
+
+            env_step = env.step(action)
+            if len(env_step) == 4:
+                next_observation, reward, done, info = env_step
+            elif len(env_step) == 5:
+                next_observation, reward, done, _, info = env_step
+            else:
+                raise ValueError(f"env_step should be length 4 or 5 but is length {len(env_step)}")
+
+            if not done or "TimeLimit.truncated" in info:
+                mask = 1.0
+            else:
+                mask = 0.0
+
+            replay_buffer.insert(
+                dict(
+                    observations=observation,
+                    actions=action,
+                    rewards=reward,
+                    masks=mask,
+                    dones=done,
+                    next_observations=next_observation,
+                )
+            )
+            observation = next_observation
+
+            if done:
+                for k, v in info["episode"].items():
+                    decode = {"r": "return", "l": "length", "t": "time"}
+                    wandb.log({f"training/{decode[k]}": v}, step=i + FLAGS.max_gradient_steps)
+                observation, done = env.reset(), False
+
+                wandb.log({f"replay_buffer/capacity": replay_buffer._capacity}, step=i + FLAGS.max_gradient_steps)
+                wandb.log({f"replay_buffer/size": replay_buffer._size}, step=i + FLAGS.max_gradient_steps)
+
+            batch = next(replay_buffer_iterator)
+            update_info = agent.update(batch)
+
+            if i % FLAGS.log_interval == 0:
+                for k, v in update_info.items():
+                    if v.ndim == 0:
+                        wandb.log({f'training/{k}': v}, step=i + FLAGS.max_gradient_steps)
+                        # print(k, v)
+
+            if i % FLAGS.eval_interval == 0:
+                eval_info = evaluate_kitchen(agent,
+                                     eval_env,
+                                     num_episodes=FLAGS.eval_episodes,
+                                     progress_bar=False)
+
+                for k, v in eval_info.items():
+                    if FLAGS.debug:
+                        v += 1000
+
+                    wandb.log({f'evaluation/{k}': v}, step=i + FLAGS.max_gradient_steps)
+
+        agent.save_checkpoint(os.path.join(save_dir, "online_checkpoints"), i + FLAGS.max_gradient_steps, -1)
+
+
+def get_task_list(task):
+    if task == "indistribution":
+        tasks_list = ['microwave', 'kettle', 'light switch', 'slide cabinet']
+    elif task == "outofdistribution":
+        tasks_list = ['microwave', 'kettle', "bottom burner", 'light switch']
+    else:
+        raise ValueError(f"Unsupported task: \"{task}\".")
+
+    return tasks_list
+
 def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
     suite, task = task.split('_', 1)
+
+    tasks_list = get_task_list(task)
 
     if "singleviewkitchen" in suite:
         assert not proprio
         assert action_repeat == 1
-        tasks_list = task.split("+")
-        env = wrappers.Kitchen(task=tasks_list, size=(64, 64), proprio=proprio)
+        # tasks_list = task.split("+")
+
+        env = wrappers.Kitchen(task=tasks_list, size=(64, 64), proprio=proprio, log_only_target_tasks=True)
         env = wrappers.ActionRepeat(env, action_repeat)
         env = wrappers.NormalizeActions(env)
         env = wrappers.TimeLimit(env, ep_length)
@@ -154,28 +243,9 @@ def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
     elif "standardkitchen" in suite:
         # assert proprio
         assert action_repeat == 1
-        tasks_list = task.split("+")
-        env = wrappers.KitchenMultipleViews(task=tasks_list, size=(128, 128), camera_ids=[0, 1], proprio=proprio)
+        # tasks_list = task.split("+")
+        env = wrappers.KitchenMultipleViews(task=tasks_list, size=(128, 128), camera_ids=[0, 1], proprio=proprio, log_only_target_tasks=True)
         env = wrappers.ActionRepeat(env, action_repeat)
-        env = wrappers.NormalizeActions(env)
-        env = wrappers.TimeLimit(env, ep_length)
-        env = FrameStack(env, num_stack=3)
-    elif "adroithand" in suite:
-        assert proprio
-        assert action_repeat == 1
-        if "human" in task and "cloned" in task:
-            task = task.replace("-cloned", "")
-
-        env = wrappers.AdroitHand(task, 64, 64, proprio=proprio, camera_angle=camera_angle)
-        env = wrappers.ActionRepeat(env, action_repeat)
-        env = wrappers.NormalizeActions(env)
-        env = wrappers.TimeLimit(env, ep_length)
-        env = FrameStack(env, num_stack=3)
-    elif "metaworld" in suite:
-        assert not proprio
-        assert action_repeat == 2
-        env = wrappers.MetaWorldEnv(name=task, action_repeat=action_repeat, size=(64, 64))
-        # env = wrappers.ActionRepeat(env, 2)
         env = wrappers.NormalizeActions(env)
         env = wrappers.TimeLimit(env, ep_length)
         env = FrameStack(env, num_stack=3)
@@ -183,7 +253,7 @@ def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
         raise ValueError(f"Unsupported environment suite: \"{suite}\".")
     return env
 
-def load_episode(episode_file, task, tasks_list):
+def load_episode(episode_file, suite, tasks_list):
     with open(episode_file, 'rb') as f:
         episode = np.load(f, allow_pickle=True)
 
@@ -203,7 +273,7 @@ def load_episode(episode_file, task, tasks_list):
     # extra_image_camera_1_rgb
     # extra_image_camera_gripper_rgb
 
-        if "standardkitchen" in task:
+        if "standardkitchen" in suite:
             keys = ["extra_image_camera_0_rgb", "extra_image_camera_1_rgb", "extra_image_camera_gripper_rgb"]
             img = np.concatenate([episode[key] for key in keys], axis=-1)
             episode["image"] = img
@@ -211,16 +281,14 @@ def load_episode(episode_file, task, tasks_list):
     return episode
 
 def load_data(replay_buffer, offline_dataset_path, task, ep_length, num_stack, proprio, debug=False):
-    if "kitchen" in task:
-        tasks_list = task.split("_")[-1].split("+")
-    else:
-        tasks_list = None
+    suite, task = task.split('_', 1)
+    tasks_list = get_task_list(task)
 
     episode_files = glob(os.path.join(offline_dataset_path, '**', '*.npz'), recursive=True)
     total_transitions = 0
 
     for episode_file in tqdm.tqdm(episode_files, total=len(episode_files), desc="Loading offline data"):
-        episode = load_episode(episode_file, task, tasks_list)
+        episode = load_episode(episode_file, suite, tasks_list)
 
         # observation, done = env.reset(), False
         frames = collections.deque(maxlen=num_stack)
@@ -287,46 +355,22 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
 export MUJOCO_GL="egl"
 
 XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
---task "standardkitchen_microwave+kettle+light switch+slide cabinet" \
+--task "standardkitchen_outofdistribution" \
 --datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/kitchen2/kitchen_demos_multitask_lexa_view_extra_images_npz/friday_kettle_bottomknob_hinge_slide_first5 \
 --tqdm=true \
 --project vd5rl_kitchen \
 --algorithm cql \
 --proprio=true \
---description default \
---eval_episodes 1 \
---eval_interval 200 \
---max_gradient_steps 10_000 \
---replay_buffer_size 600_000 \
+--description proprio \
+--eval_episodes 5 \
+--eval_interval 1000 \
+--max_gradient_steps 500_000 \
+--max_online_gradient_steps 500_000 \
+--replay_buffer_size 1_000_000 \
 --seed 0 \
 --debug=true
 
 
-XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
---task "singleviewkitchen_microwave+kettle+light switch+slide cabinet" \
---datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/kitchen2/kitchen_demos_multitask_npz \
---tqdm=true \
---project vd5rl_kitchen \
---algorithm cql \
---description default \
---eval_episodes 1 \
---eval_interval 200 \
---max_gradient_steps 10_000 \
---replay_buffer_size 600_000 \
---seed 0 \
---debug=true
 
-XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
---task "kitchen_microwave+kettle+light switch+slide cabinet" \
---datadir /PATH/TO/data/kitchen2/kitchen_demos_multitask_npz \
---tqdm=true \
---project vd5rl_kitchen \
---algorithm cql \
---description default \
---eval_episodes 1 \
---eval_interval 200 \
---max_gradient_steps 10_000 \
---replay_buffer_size 600_000 \
---seed 0 \
---debug=true
+indistribution
 """

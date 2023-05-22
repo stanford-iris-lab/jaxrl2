@@ -428,7 +428,7 @@ CAMERAS = {
 }
 
 class Kitchen:
-    def __init__(self, task=['microwave'], size=(64, 64), proprio=True):
+    def __init__(self, task=['microwave'], size=(64, 64), proprio=True, log_only_target_tasks=False):
         # from .RPL.adept_envs import adept_envs
         # sys.path.append("/workdisk/code/relay-policy-learning/adept_envs")
         # sys.path.append("../../relay-policy-learning/adept_envs")
@@ -448,6 +448,7 @@ class Kitchen:
                                   'hinge cabinet',
                                   'microwave',
                                   'kettle']
+        self._log_only_target_tasks = log_only_target_tasks
 
         self.observation_space = self.get_observation_space()
 
@@ -496,6 +497,10 @@ class Kitchen:
             reward_dict[element] = complete
 
             obs_dict = self.obs_dict
+
+        if self._log_only_target_tasks:
+            reward_dict = {key:reward_dict[key] for key in self._task}
+
         return reward_dict
 
     def render(self, mode='human', size=(1920, 2550)):

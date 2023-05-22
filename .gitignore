@@ -132,3 +132,4 @@ dmypy.json
 .remote-sync.json
 jupyter_notebooks/
 examples/scratch.py
+examples/scripts
