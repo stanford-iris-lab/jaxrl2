@@ -13,11 +13,12 @@ def get_bc_config():
     config.cnn_filters = (3, 3, 3, 3, 3)
     config.cnn_strides = (2, 2, 2, 2, 2)
     config.cnn_padding = "VALID"
+    config.cnn_groups = 3 ###===### ###---###
     config.latent_dim = 50
 
     config.encoder = "d4pg"
 
-    config.cnn_groups = 3 ###===### ###---###
+
 
     config.dropout_rate = config_dict.placeholder(float)
     config.cosine_decay = True

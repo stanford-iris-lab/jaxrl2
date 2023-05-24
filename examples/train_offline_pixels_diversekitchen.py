@@ -50,6 +50,7 @@ flags.DEFINE_integer('eval_interval', 5000, 'Eval interval.')
 flags.DEFINE_integer('batch_size', 256, 'Mini batch size.')
 flags.DEFINE_integer('max_gradient_steps', int(5e5), 'Number of training steps.')
 flags.DEFINE_integer('max_online_gradient_steps', int(5e5), 'Number of training steps.')
+flags.DEFINE_boolean('finetune_online', True, 'Save videos during evaluation.')
 flags.DEFINE_boolean('proprio', False, 'Save videos during evaluation.')
 
 
@@ -76,7 +77,7 @@ def main(_):
 
     if FLAGS.debug:
         FLAGS.project = "trash_results"
-        FLAGS.batch_size = 16
+        # FLAGS.batch_size = 16
         FLAGS.max_gradient_steps = 500
         FLAGS.eval_interval = 400
         FLAGS.eval_episodes = 2
@@ -150,7 +151,7 @@ def main(_):
 
     agent.save_checkpoint(os.path.join(save_dir, "offline_checkpoints"), i, -1)
 
-    if FLAGS.max_online_gradient_steps > 0:
+    if FLAGS.finetune_online and FLAGS.max_online_gradient_steps > 0:
         print('Start online training')
         observation, done = env.reset(), False
         tbar = tqdm.tqdm(range(1, FLAGS.max_online_gradient_steps + 1), smoothing=0.1, disable=not FLAGS.tqdm)
