@@ -149,6 +149,10 @@ def main(_):
             for k, v in eval_info.items():
                 wandb.log({f'evaluation/{k}': v}, step=i)
 
+            wandb.log({f"replay_buffer/capacity": replay_buffer._capacity}, step=i)
+            wandb.log({f"replay_buffer/size": replay_buffer._size}, step=i)
+            wandb.log({f"replay_buffer/fullness": replay_buffer._size / replay_buffer._capacity}, step=i)
+
     agent.save_checkpoint(os.path.join(save_dir, "offline_checkpoints"), i, -1)
 
     if FLAGS.finetune_online and FLAGS.max_online_gradient_steps > 0:
@@ -191,9 +195,6 @@ def main(_):
                     wandb.log({f"training/{decode[k]}": v}, step=i + FLAGS.max_gradient_steps)
                 observation, done = env.reset(), False
 
-                wandb.log({f"replay_buffer/capacity": replay_buffer._capacity}, step=i + FLAGS.max_gradient_steps)
-                wandb.log({f"replay_buffer/size": replay_buffer._size}, step=i + FLAGS.max_gradient_steps)
-
             batch = replay_buffer.sample(FLAGS.batch_size)
             update_info = agent.update(batch)
 
@@ -214,6 +215,10 @@ def main(_):
                         v += 1000
 
                     wandb.log({f'evaluation/{k}': v}, step=i + FLAGS.max_gradient_steps)
+
+                wandb.log({f"replay_buffer/capacity": replay_buffer._capacity}, step=i + FLAGS.max_gradient_steps)
+                wandb.log({f"replay_buffer/size": replay_buffer._size}, step=i + FLAGS.max_gradient_steps)
+                wandb.log({f"replay_buffer/fullness": replay_buffer._size / replay_buffer._capacity}, step=i + FLAGS.max_gradient_steps)
 
         agent.save_checkpoint(os.path.join(save_dir, "online_checkpoints"), i + FLAGS.max_gradient_steps, -1)
 

@@ -11,7 +11,7 @@ from absl import app, flags
 from flax.metrics.tensorboard import SummaryWriter
 from ml_collections import config_flags
 
-from jaxrl2.evaluation import evaluate
+from jaxrl2.evaluation import evaluate_adroit
 
 from jaxrl2.agents.pixel_cql import PixelCQLLearner
 from jaxrl2.agents.pixel_iql import PixelIQLLearner
@@ -123,15 +123,14 @@ def main(_):
     replay_buffer = MemoryEfficientReplayBuffer(env.observation_space, env.action_space, FLAGS.replay_buffer_size)
     replay_buffer.seed(FLAGS.seed)
     replay_buffer_iterator = replay_buffer.get_iterator(sample_args={"batch_size": FLAGS.batch_size, "include_pixels": False})
-    load_data(replay_buffer, FLAGS.datadir, FLAGS.task, FLAGS.ep_length, 3, FLAGS.proprio, debug=FLAGS.debug)
+    load_data(replay_buffer, FLAGS.datadir, FLAGS.ep_length, 3, FLAGS.proprio, debug=FLAGS.debug)
     print('Replay buffer loaded')
 
     print('Start offline training')
     tbar = tqdm.tqdm(range(1, FLAGS.max_gradient_steps + 1), smoothing=0.1, disable=not FLAGS.tqdm)
     for i in tbar:
-        tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}]  (offline)")
+        tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}] (offline)")
         batch = next(replay_buffer_iterator)
-        import pdb; pdb.set_trace()
         update_info = agent.update(batch)
 
         if i % FLAGS.log_interval == 0:
@@ -141,12 +140,23 @@ def main(_):
                     # print(k, v)
 
         if i % FLAGS.eval_interval == 0:
-            eval_info = evaluate(agent,
+            eval_info = evaluate_adroit(agent,
                                  eval_env,
                                  num_episodes=FLAGS.eval_episodes,
                                  progress_bar=False)
             for k, v in eval_info.items():
                 wandb.log({f'evaluation/{k}': v}, step=i)
+
+            wandb.log({f"replay_buffer/capacity": replay_buffer._capacity}, step=i)
+            wandb.log({f"replay_buffer/size": replay_buffer._size}, step=i)
+            wandb.log({f"replay_buffer/fullness": replay_buffer._size / replay_buffer._capacity}, step=i)
+
+    eval_info = evaluate_adroit(agent,
+                         eval_env,
+                         num_episodes=100,
+                         progress_bar=False)
+    for k, v in eval_info.items():
+        wandb.log({f'evaluation/{k}': v}, step=i)
 
     agent.save_checkpoint(os.path.join(save_dir, "offline_checkpoints"), i, -1)
 
@@ -190,9 +200,6 @@ def main(_):
                     wandb.log({f"training/{decode[k]}": v}, step=i + FLAGS.max_gradient_steps)
                 observation, done = env.reset(), False
 
-                wandb.log({f"replay_buffer/capacity": replay_buffer._capacity}, step=i + FLAGS.max_gradient_steps)
-                wandb.log({f"replay_buffer/size": replay_buffer._size}, step=i + FLAGS.max_gradient_steps)
-
             batch = next(replay_buffer_iterator)
             update_info = agent.update(batch)
 
@@ -203,7 +210,7 @@ def main(_):
                         # print(k, v)
 
             if i % FLAGS.eval_interval == 0:
-                eval_info = evaluate_kitchen(agent,
+                eval_info = evaluate_adroit(agent,
                                      eval_env,
                                      num_episodes=FLAGS.eval_episodes,
                                      progress_bar=False)
@@ -213,6 +220,10 @@ def main(_):
                         v += 1000
 
                     wandb.log({f'evaluation/{k}': v}, step=i + FLAGS.max_gradient_steps)
+
+                wandb.log({f"replay_buffer/capacity": replay_buffer._capacity}, step=i + FLAGS.max_gradient_steps)
+                wandb.log({f"replay_buffer/size": replay_buffer._size}, step=i + FLAGS.max_gradient_steps)
+                wandb.log({f"replay_buffer/fullness": replay_buffer._size / replay_buffer._capacity}, step=i + FLAGS.max_gradient_steps)
 
         agent.save_checkpoint(os.path.join(save_dir, "online_checkpoints"), i + FLAGS.max_gradient_steps, -1)
 
@@ -234,44 +245,20 @@ def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
         raise ValueError(f"Unsupported environment suite: \"{suite}\".")
     return env
 
-def load_episode(episode_file, task, tasks_list):
+def load_episode(episode_file):
     with open(episode_file, 'rb') as f:
         episode = np.load(f, allow_pickle=True)
 
-        if tasks_list is None:
-            episode = {k: episode[k] for k in episode.keys() if k not in ['image_128'] and "metadata" not in k and "str" not in episode[k].dtype.name and episode[k].dtype != object}
-        else:
-            if "reward" in episode:
-                rewards = episode["reward"]
-            else:
-                rewards = sum([episode[f"reward {obj}"] for obj in tasks_list])
-
-            episode = {k: episode[k] for k in episode.keys() if k not in ['image_128'] and "metadata" not in k and "str" not in episode[k].dtype.name and episode[k].dtype != object and "init_q" not in k and "observation" not in k and "terminal" not in k and "goal" not in k}
-            episode["reward"] = rewards
-
-
-    # extra_image_camera_0_rgb
-    # extra_image_camera_1_rgb
-    # extra_image_camera_gripper_rgb
-
-        if "standardkitchen" in task:
-            keys = ["extra_image_camera_0_rgb", "extra_image_camera_1_rgb", "extra_image_camera_gripper_rgb"]
-            img = np.concatenate([episode[key] for key in keys], axis=-1)
-            episode["image"] = img
+        episode = {k: episode[k] for k in episode.keys() if k not in ['image_128'] and "metadata" not in k and "str" not in episode[k].dtype.name and episode[k].dtype != object}
 
     return episode
 
-def load_data(replay_buffer, offline_dataset_path, task, ep_length, num_stack, proprio, debug=False):
-    if "kitchen" in task:
-        tasks_list = task.split("_")[-1].split("+")
-    else:
-        tasks_list = None
-
+def load_data(replay_buffer, offline_dataset_path, ep_length, num_stack, proprio, debug=False):
     episode_files = glob(os.path.join(offline_dataset_path, '**', '*.npz'), recursive=True)
     total_transitions = 0
 
     for episode_file in tqdm.tqdm(episode_files, total=len(episode_files), desc="Loading offline data"):
-        episode = load_episode(episode_file, task, tasks_list)
+        episode = load_episode(episode_file)
 
         # observation, done = env.reset(), False
         frames = collections.deque(maxlen=num_stack)
@@ -360,6 +347,26 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_adroit.py \
 --eval_interval 200 \
 --max_gradient_steps 10_000 \
 --replay_buffer_size 600_000 \
+--seed 0 \
+--debug=true
+
+
+XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_adroit.py \
+--task "adroithand_hammer-binary2-v0" \
+--datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/adroit_hand/hammer-human-v1/camera2/imsize_128 \
+--tqdm=true \
+--camera_angle=camera2 \
+--project bench_standardkitchen \
+--algorithm cql \
+--proprio=true \
+--description proprio \
+--eval_episodes 25 \
+--eval_interval 10000 \
+--log_interval 1000 \
+--max_gradient_steps 500_000 \
+--max_online_gradient_steps 500_000 \
+--replay_buffer_size 700_000 \
+--batch_size 128 \
 --seed 0 \
 --debug=true
 """
