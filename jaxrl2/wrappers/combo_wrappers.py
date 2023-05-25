@@ -6,7 +6,8 @@ import traceback
 
 import gym
 import mujoco_py
-import d4rl
+# import d4rl
+import benchmark
 import metaworld
 import numpy as np
 from PIL import Image
@@ -111,67 +112,70 @@ class AdroitHand:
         self._proprio = proprio
         self._camera_angle = camera_angle
 
-        self.setup_viewer()
+        self.viewer = mujoco_py.MjRenderContextOffscreen(self._env.sim, -1)
+        self.setup_viewer(self.viewer, camera_angle)
+
+        # self.setup_viewer()
 
         self.observation_space = self.get_observation_space()
 
-    def setup_viewer(self):
+    def setup_viewer(self, viewer, camera_angle):
         #Setup camera in environment
         # self.viewer = mujoco_py.MjRenderContextOffscreen(self._env.sim, -1)
-        self.viewer = mujoco_py.MjRenderContextOffscreen(self._env.sim, 0)
+        # # self.viewer = mujoco_py.MjRenderContextOffscreen(self._env.sim, 0)
 
-        if self._camera_angle == "camera1":
+        if camera_angle == "camera1":
             # Use this
-            self.viewer.cam.elevation = -40
-            self.viewer.cam.azimuth = 20
-            self.viewer.cam.distance = 0.5
-            self.viewer.cam.lookat[0] = -0.2
-            self.viewer.cam.lookat[1] = -0.2
-            self.viewer.cam.lookat[2] = 0.4
-        elif self._camera_angle == "camera2":
-            self.viewer.cam.elevation = -40
-            self.viewer.cam.azimuth = 20
-            self.viewer.cam.distance = 0.4
-            self.viewer.cam.lookat[0] = -0.2
-            self.viewer.cam.lookat[1] = -0.2
-            self.viewer.cam.lookat[2] = 0.3
-        elif self._camera_angle == "camera3":
-            self.viewer.cam.elevation = -40
-            self.viewer.cam.azimuth = 20
-            self.viewer.cam.distance = 0.5
-            self.viewer.cam.lookat[0] = -0.2
-            self.viewer.cam.lookat[1] = -0.2
-            self.viewer.cam.lookat[2] = 0.3
-        elif self._camera_angle == "camera4":
-            self.viewer.cam.elevation = -15
-            self.viewer.cam.azimuth = 30
-            self.viewer.cam.distance = 0.5
-            self.viewer.cam.lookat[0] = -0.2
-            self.viewer.cam.lookat[1] = -0.2
-            self.viewer.cam.lookat[2] = 0.4
-        elif self._camera_angle == "camera5":
-            self.viewer.cam.elevation = -40
-            self.viewer.cam.azimuth = 30
-            self.viewer.cam.distance = 0.3
-            self.viewer.cam.lookat[0] = -0.1
-            self.viewer.cam.lookat[1] = -0.3
-            self.viewer.cam.lookat[2] = 0.4
-        elif self._camera_angle == "camera6":
-            self.viewer.cam.elevation = -50
-            self.viewer.cam.azimuth = 0
-            self.viewer.cam.distance = 0.5
-            self.viewer.cam.lookat[0] = -0.1
-            self.viewer.cam.lookat[1] = -0.0
-            self.viewer.cam.lookat[2] = 0.4
+            viewer.cam.elevation = -40
+            viewer.cam.azimuth = 20
+            viewer.cam.distance = 0.5
+            viewer.cam.lookat[0] = -0.2
+            viewer.cam.lookat[1] = -0.2
+            viewer.cam.lookat[2] = 0.4
+        elif camera_angle == "camera2":
+            viewer.cam.elevation = -40
+            viewer.cam.azimuth = 20
+            viewer.cam.distance = 0.4
+            viewer.cam.lookat[0] = -0.2
+            viewer.cam.lookat[1] = -0.2
+            viewer.cam.lookat[2] = 0.3
+        elif camera_angle == "camera3":
+            viewer.cam.elevation = -40
+            viewer.cam.azimuth = 20
+            viewer.cam.distance = 0.5
+            viewer.cam.lookat[0] = -0.2
+            viewer.cam.lookat[1] = -0.2
+            viewer.cam.lookat[2] = 0.3
+        elif camera_angle == "camera4":
+            viewer.cam.elevation = -15
+            viewer.cam.azimuth = 30
+            viewer.cam.distance = 0.5
+            viewer.cam.lookat[0] = -0.2
+            viewer.cam.lookat[1] = -0.2
+            viewer.cam.lookat[2] = 0.4
+        elif camera_angle == "camera5":
+            viewer.cam.elevation = -40
+            viewer.cam.azimuth = 30
+            viewer.cam.distance = 0.3
+            viewer.cam.lookat[0] = -0.1
+            viewer.cam.lookat[1] = -0.3
+            viewer.cam.lookat[2] = 0.4
+        elif camera_angle == "camera6":
+            viewer.cam.elevation = -50
+            viewer.cam.azimuth = 0
+            viewer.cam.distance = 0.5
+            viewer.cam.lookat[0] = -0.1
+            viewer.cam.lookat[1] = -0.0
+            viewer.cam.lookat[2] = 0.4
         else:
-            raise ValueError(f"Unsupported camera angle: \"{self._camera_angle}\".")
+            raise ValueError(f"Unsupported camera angle: \"{camera_angle}\".")
 
     def __getattr__(self, attr):
         if attr == '_wrapped_env':
             raise AttributeError()
         return getattr(self._env, attr)
 
-    def render(self):
+    def render(self, *args, **kwargs):
         # image = self._env.sim.render(self._img_width, self._img_height)
         # image = np.flip(image, axis=0)
         # return image
@@ -227,6 +231,154 @@ class AdroitHand:
         return gym.spaces.Dict(spaces)
 
 
+class AdroitHandMultiview:
+    def __init__(self, env_name, img_width, img_height, proprio=False, camera_angles=["camera2"]):
+        self._env_name = env_name
+        self._env = gym.make(env_name).env
+        self._img_width = img_width
+        self._img_height = img_height
+        self._proprio = proprio
+        self._camera_angles = camera_angles
+
+        # self.viewers = {}
+        # for camera_angle in self._camera_angles:
+        #     self.viewers[camera_angle] = mujoco_py.MjRenderContextOffscreen(self._env.sim, -1)
+        #     self.setup_viewer(self.viewers[camera_angle], camera_angle)
+        self.viewer = mujoco_py.MjRenderContextOffscreen(self._env.sim, -1)
+
+        self.observation_space = self.get_observation_space()
+
+    def setup_viewer(self, viewer, camera_angle):
+        #Setup camera in environment
+        # self.viewer = mujoco_py.MjRenderContextOffscreen(self._env.sim, -1)
+        # # self.viewer = mujoco_py.MjRenderContextOffscreen(self._env.sim, 0)
+
+        if camera_angle == "camera1":
+            # Use this
+            viewer.cam.elevation = -40
+            viewer.cam.azimuth = 20
+            viewer.cam.distance = 0.5
+            viewer.cam.lookat[0] = -0.2
+            viewer.cam.lookat[1] = -0.2
+            viewer.cam.lookat[2] = 0.4
+        elif camera_angle == "camera2":
+            viewer.cam.elevation = -40
+            viewer.cam.azimuth = 20
+            viewer.cam.distance = 0.4
+            viewer.cam.lookat[0] = -0.2
+            viewer.cam.lookat[1] = -0.2
+            viewer.cam.lookat[2] = 0.3
+        elif camera_angle == "camera3":
+            viewer.cam.elevation = -40
+            viewer.cam.azimuth = 20
+            viewer.cam.distance = 0.5
+            viewer.cam.lookat[0] = -0.2
+            viewer.cam.lookat[1] = -0.2
+            viewer.cam.lookat[2] = 0.3
+        elif camera_angle == "camera4":
+            viewer.cam.elevation = -15
+            viewer.cam.azimuth = 30
+            viewer.cam.distance = 0.5
+            viewer.cam.lookat[0] = -0.2
+            viewer.cam.lookat[1] = -0.2
+            viewer.cam.lookat[2] = 0.4
+        elif camera_angle == "camera5":
+            viewer.cam.elevation = -40
+            viewer.cam.azimuth = 30
+            viewer.cam.distance = 0.3
+            viewer.cam.lookat[0] = -0.1
+            viewer.cam.lookat[1] = -0.3
+            viewer.cam.lookat[2] = 0.4
+        elif camera_angle == "camera6":
+            viewer.cam.elevation = -50
+            viewer.cam.azimuth = 0
+            viewer.cam.distance = 0.5
+            viewer.cam.lookat[0] = -0.1
+            viewer.cam.lookat[1] = -0.0
+            viewer.cam.lookat[2] = 0.4
+        else:
+            raise ValueError(f"Unsupported camera angle: \"{camera_angle}\".")
+
+    def __getattr__(self, attr):
+        if attr == '_wrapped_env':
+            raise AttributeError()
+        return getattr(self._env, attr)
+
+    def render(self, *args, **kwargs):
+        # image = self._env.sim.render(self._img_width, self._img_height)
+        # image = np.flip(image, axis=0)
+        # return image
+        viewer = self.viewers[self._camera_angles[0]]
+        viewer.render(width=self._img_width, height=self._img_height)
+        img = viewer.read_pixels(self._img_width, self._img_height, depth=False)
+        img = img[::-1]
+        return img
+
+    def render_all_cameras(self):
+        images = []
+        # for camera_angle in self._camera_angles:
+        #     viewer = self.viewers[camera_angle]
+        #     viewer.render(width=self._img_width, height=self._img_height)
+        #     img = viewer.read_pixels(self._img_width, self._img_height, depth=False)
+        #     img = img[::-1]
+        #     images.append(img)
+        for camera_angle in self._camera_angles:
+            self.setup_viewer(self.viewer, camera_angle)
+            self.viewer.render(width=self._img_width, height=self._img_height)
+            img = self.viewer.read_pixels(self._img_width, self._img_height, depth=False)
+            img = img[::-1]
+            images.append(img)
+
+        images =  np.concatenate(images, axis=-1)
+        return images
+
+    def reset(self, *args, **kwargs):
+        state = self._env.reset(*args, **kwargs)
+        img = self.render_all_cameras()
+        # obs = {'state':state, 'image':img}
+        obs = {'pixels':img}
+
+        if self._proprio:
+            obs["states"] = self.get_proprio() # proprio is called 'states' in jaxrl2
+
+        return obs
+
+    def get_proprio(self):
+        qpos = self._env.data.qpos.ravel()
+        if "hammer" in self._env_name or "pen" in self._env_name or "relocate" in self._env_name:
+            return qpos[:-6]
+        elif "door" in self._env_name:
+            return qpos[1:-2]
+        else:
+            raise NotImplementedError(f"Proprio not supported for \"{self._env_name}\" environment.")
+
+    def step(self, *args, **kwargs):
+        state, reward, done, info = self._env.step(*args, **kwargs)
+        img = self.render_all_cameras()
+        # obs = {'state':state, 'image':img}
+        obs = {'pixels':img}
+
+        if self._proprio:
+            obs["states"] = self.get_proprio()
+
+        return obs, reward, done, info
+
+    # @property
+    # def observation_space(self):
+    def get_observation_space(self):
+        spaces = {}
+        # for key, value in self._env.observation_spec().items():
+        #     spaces[key] = gym.spaces.Box(-np.inf, np.inf, value.shape, dtype=np.float32)
+        # spaces["state"] = self._env.observation_space
+        spaces['pixels'] = gym.spaces.Box(0, 255, (self._img_width, self._img_height, 3 * len(self._camera_angles)), dtype=np.uint8)
+
+        if self._proprio:
+            # spaces["proprio"] = gym.spaces.Box(-np.inf, np.inf, self.get_proprio().shape, dtype=np.float32)
+            spaces["states"] = gym.spaces.Box(-np.inf, np.inf, self.get_proprio().shape, dtype=np.float32)
+
+        return gym.spaces.Dict(spaces)
+
+
 OBS_ELEMENT_INDICES = {
     'bottom burner': np.array([11, 12]),
     'top burner': np.array([15, 16]),
@@ -249,11 +401,39 @@ OBS_ELEMENT_GOALS = {
 
 BONUS_THRESH = 0.3
 
+CAMERAS = {
+    0: dict(distance=2.1, lookat=[-0.4, 0.5, 2.0], azimuth=70,
+            elevation=-37.5),
+    1: dict(distance=2.2,
+            lookat=[-0.2, 0.75, 2.0],
+            azimuth=150,
+            elevation=-30.0),
+    2: dict(distance=4.5, azimuth=-66, elevation=-65),
+    3: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=70, elevation=-35
+            ),  # original, as in https://relay-policy-learning.github.io/
+    4: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=70,
+            elevation=-50),  # angled up to get a more top-down view
+    5: dict(distance=2.65, lookat=[0, 0, 2.0], azimuth=90, elevation=-60
+            ),  # similar to appendix D of https://arxiv.org/pdf/1910.11956.pdf
+    6: dict(distance=2.5, lookat=[-0.2, 0.5, 2.0], azimuth=90, elevation=-60
+            ),  # 3-6 are first person views at different angles and distances
+    7: dict(
+        distance=2.5, lookat=[-0.2, 0.5, 2.0], azimuth=90, elevation=-45
+    ),  # problem w/ POV is that the knobs can be hidden by the hinge drawer and arm
+    8: dict(distance=2.9, lookat=[-0.05, 0.5, 2.0], azimuth=90, elevation=-50),
+    9: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=90,
+            elevation=-50),  # move back so less of cabinets
+    10: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=90, elevation=-35),
+    11: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=90, elevation=-10)
+}
+
 class Kitchen:
-    def __init__(self, task=['microwave'], size=(64, 64), proprio=True):
+    def __init__(self, task=['microwave'], size=(64, 64), proprio=True, log_only_target_tasks=False):
         # from .RPL.adept_envs import adept_envs
         # sys.path.append("/workdisk/code/relay-policy-learning/adept_envs")
-        sys.path.append("../../relay-policy-learning/adept_envs")
+        # sys.path.append("../../relay-policy-learning/adept_envs")
+        sys.path.append("../../finetuning_benchmark/benchmark/domains/relay-policy-learning/adept_envs")
+
         import adept_envs
         self._env = gym.make('kitchen_relax_rpl-v1')
         self._task = task
@@ -268,6 +448,7 @@ class Kitchen:
                                   'hinge cabinet',
                                   'microwave',
                                   'kettle']
+        self._log_only_target_tasks = log_only_target_tasks
 
         self.observation_space = self.get_observation_space()
 
@@ -283,7 +464,7 @@ class Kitchen:
         obs_dict = dict(pixels=img)
 
         if self._proprio:
-            obs_dict["proprio"] = obs[:9]
+            obs_dict["states"] = obs[:9]
 
         reward = sum([reward_dict[obj] for obj in self._task])
 
@@ -301,7 +482,7 @@ class Kitchen:
         obs_dict = dict(pixels=img)
 
         if self._proprio:
-            obs_dict["proprio"] = obs[:9]
+            obs_dict["states"] = obs[:9]
 
         return obs_dict
 
@@ -316,14 +497,18 @@ class Kitchen:
             reward_dict[element] = complete
 
             obs_dict = self.obs_dict
+
+        if self._log_only_target_tasks:
+            reward_dict = {key:reward_dict[key] for key in self._task}
+
         return reward_dict
 
     def render(self, mode='human', size=(1920, 2550)):
         if mode =='rgb_array':
             # camera = engine.MovableCamera(self.sim, 1920, 2560)
             camera = engine.MovableCamera(self._env.sim, size[0], size[1])
-            # camera.set_pose(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=70, elevation=-35)
-            camera.set_pose(distance=1.86, lookat=[-0.3, .5, 2.], azimuth=90, elevation=-60)
+            # camera.set_pose(distance=2.2, lookat=[-0.2, .5, 2.], azimuth=70, elevation=-35) # original?
+            camera.set_pose(distance=1.86, lookat=[-0.3, .5, 2.], azimuth=90, elevation=-60) # Lexa?
             img = camera.render()
             return img
         else:
@@ -337,10 +522,105 @@ class Kitchen:
         spaces['pixels'] = gym.spaces.Box(0, 255, (self._img_h, self._img_w, 3), dtype=np.uint8)
 
         if self._proprio:
-            spaces["proprio"] = gym.spaces.Box(-np.inf, np.inf, (9,), dtype=np.float32)
+            spaces["states"] = gym.spaces.Box(-np.inf, np.inf, (9,), dtype=np.float32)
 
         return gym.spaces.Dict(spaces)
 
+
+class KitchenMultipleViews(Kitchen):
+    def __init__(self, *args, camera_ids=[0, 1], **kwargs):
+        self.camera_ids = camera_ids
+        super().__init__(*args, **kwargs)
+        self.add_cameras()
+        # self.render = self.render2
+
+
+    def add_cameras(self, camera_id=None):
+        if camera_id is not None:
+            self.camera_ids.append(camera_id)
+        self.cameras = dict()
+        for camera_id in self.camera_ids:
+            camera = engine.MovableCamera(self.sim,
+                                          height=self._img_h,
+                                          width=self._img_w)
+            camera.set_pose(**CAMERAS[camera_id])
+            self.cameras['camera_{}'.format(camera_id)] = camera
+        self.cameras['camera_gripper'] = engine.Camera(
+            self.sim,
+            height=self._img_h,
+            width=self._img_w,
+            camera_id='gripper_camera_rgb')
+
+    def get_observation_space(self):
+        spaces = {}
+        spaces['pixels'] = gym.spaces.Box(0, 255, (self._img_h, self._img_w, 3 * (len(self.camera_ids) + 1)), dtype=np.uint8)
+        # spaces['pixels'] = gym.spaces.Box(0, 255, (self._img_h, self._img_w, 3, dtype=np.uint8)
+
+        if self._proprio:
+            spaces["states"] = gym.spaces.Box(-np.inf, np.inf, (9,), dtype=np.float32)
+
+        return gym.spaces.Dict(spaces)
+
+    def reset(self, *args, **kwargs):
+        obs = self._env.reset(*args, **kwargs)
+
+        # img = self.render(mode='rgb_array', size=(self._img_h, self._img_w))
+        imgs = self.render_extra_views("rgb")
+        # keys = sorted(list(imgs.keys()))
+        keys = ['camera_0_rgb', 'camera_1_rgb', 'camera_gripper_rgb']
+        img = np.concatenate([imgs[key] for key in keys], axis=2)
+        obs_dict = dict(pixels=img)
+
+        if self._proprio:
+            obs_dict["states"] = obs[:9]
+
+        return obs_dict
+
+    def step(self, *args, **kwargs):
+        obs, reward, done, info = self._env.step(*args, **kwargs)
+        reward_dict = self._compute_reward_dict(obs)
+        # img = self.render(mode='rgb_array', size=(self._img_h, self._img_w))
+        imgs = self.render_extra_views("rgb")
+        # keys = sorted(list(imgs.keys()))
+        keys = ['camera_0_rgb', 'camera_1_rgb', 'camera_gripper_rgb']
+        img = np.concatenate([imgs[key] for key in keys], axis=2)
+        obs_dict = dict(pixels=img)
+
+        if self._proprio:
+            obs_dict["states"] = obs[:9]
+
+        reward = sum([reward_dict[obj] for obj in self._task])
+
+        info.update({"reward " + key:float(val) for key, val in reward_dict.items()})
+        # info.update({"reward " + key:1 if ("kettle" in key or "burner" in key) else float(val) for key, val in reward_dict.items()})
+
+
+        # obs_dict.update({"reward " + key:float(val) for key, val in reward_dict.items()})
+        return obs_dict, reward, done, info
+
+
+    def render_extra_views(self, mode='rgb', depth=False, segmentation=False):
+#         print("In render 2")
+        imgs = {}
+        if 'rgb' in mode:
+            # http://www.mujoco.org/book/APIreference.html#mjvOption
+            # https://github.com/deepmind/dm_control/blob/9e0fe0f0f9713a2a993ca78776529011d6c5fbeb/dm_control/mujoco/engine.py#L200
+            # mjtRndFlag(mjRND_SHADOW=0, mjRND_WIREFRAME=1, mjRND_REFLECTION=2, mjRND_ADDITIVE=3, mjRND_SKYBOX=4, mjRND_FOG=5, mjRND_HAZE=6, mjRND_SEGMENT=7, mjRND_IDCOLOR=8, mjNRNDFLAG=9)
+
+            for camera_id, camera in self.cameras.items():
+                img_rgb = camera.render(render_flag_overrides=dict(
+                    skybox=False, fog=False, haze=False))
+                imgs[camera_id + "_rgb"] = img_rgb
+
+        if 'depth' in mode:
+            for camera_id, camera in self.cameras.items():
+                img_depth = camera.render(depth=True, segmentation=False)
+                imgs[camera_id + "_depth"] = np.clip(img_depth, 0.0, 4.0)
+
+        if 'human' in mode:
+            self.renderer.render_to_window()  # adept_envs.mujoco_env.MujocoEnv.render
+
+        return imgs
 
 class Gym:
     def __init__(self, name, config, size=(64, 64)):

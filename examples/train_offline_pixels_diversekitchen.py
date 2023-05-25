@@ -3,7 +3,7 @@ import pickle
 import numpy as np
 
 import gym
-# import d4rl2
+from benchmark.domains import d4rl2
 import tensorflow as tf
 import tqdm
 import wandb
@@ -120,17 +120,19 @@ def main(_):
     print('Agent created')
 
     print("Loading replay buffer")
-    replay_buffer = MemoryEfficientReplayBuffer(env.observation_space, env.action_space, FLAGS.replay_buffer_size)
-    replay_buffer.seed(FLAGS.seed)
-    replay_buffer_iterator = replay_buffer.get_iterator(sample_args={"batch_size": FLAGS.batch_size, "include_pixels": False})
-    load_data(replay_buffer, FLAGS.datadir, FLAGS.task, FLAGS.ep_length, 3, FLAGS.proprio, debug=FLAGS.debug)
+    # replay_buffer = MemoryEfficientReplayBuffer(env.observation_space, env.action_space, FLAGS.replay_buffer_size)
+    # replay_buffer.seed(FLAGS.seed)
+    # replay_buffer_iterator = replay_buffer.get_iterator(sample_args={"batch_size": FLAGS.batch_size, "include_pixels": False})
+    # load_data(replay_buffer, FLAGS.datadir, FLAGS.task, FLAGS.ep_length, 3, FLAGS.proprio, debug=FLAGS.debug)
+    replay_buffer = env.q_learning_dataset(include_pixels=False, size=FLAGS.replay_buffer_size, debug=FLAGS.debug)
     print('Replay buffer loaded')
 
     print('Start offline training')
     tbar = tqdm.tqdm(range(1, FLAGS.max_gradient_steps + 1), smoothing=0.1, disable=not FLAGS.tqdm)
     for i in tbar:
-        tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed} (offline)]")
-        batch = next(replay_buffer_iterator)
+        tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}]  (offline)")
+        # batch = next(replay_buffer_iterator)
+        batch = replay_buffer.sample(FLAGS.batch_size)
         update_info = agent.update(batch)
 
         if i % FLAGS.log_interval == 0:
@@ -192,7 +194,7 @@ def main(_):
                 wandb.log({f"replay_buffer/capacity": replay_buffer._capacity}, step=i + FLAGS.max_gradient_steps)
                 wandb.log({f"replay_buffer/size": replay_buffer._size}, step=i + FLAGS.max_gradient_steps)
 
-            batch = next(replay_buffer_iterator)
+            batch = replay_buffer.sample(FLAGS.batch_size)
             update_info = agent.update(batch)
 
             if i % FLAGS.log_interval == 0:
@@ -216,45 +218,46 @@ def main(_):
         agent.save_checkpoint(os.path.join(save_dir, "online_checkpoints"), i + FLAGS.max_gradient_steps, -1)
 
 
-def get_task_list(task):
-    if task == "indistribution":
-        tasks_list = ['microwave', 'kettle', 'light switch', 'slide cabinet']
-    elif task == "outofdistribution":
-        tasks_list = ['microwave', 'kettle', "bottom burner", 'light switch']
-    else:
-        raise ValueError(f"Unsupported task: \"{task}\".")
-
-    return tasks_list
-
 def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
     suite, task = task.split('_', 1)
 
-    tasks_list = get_task_list(task)
+    if "diversekitchen" in suite:
 
-    if "singleviewkitchen" in suite:
-        assert not proprio
-        assert action_repeat == 1
-        # tasks_list = task.split("+")
+        """
+        Check what the episode length is for standard kitchen
+        """
 
-        env = wrappers.Kitchen(task=tasks_list, size=(64, 64), proprio=proprio, log_only_target_tasks=True)
-        env = wrappers.ActionRepeat(env, action_repeat)
-        env = wrappers.NormalizeActions(env)
-        env = wrappers.TimeLimit(env, ep_length)
-        env = FrameStack(env, num_stack=3)
-    elif "standardkitchen" in suite:
+        task_set, datasets = task.split("-")
+        datasets = datasets.split("+")
+
+        if task_set == "indistribution":
+            tasks_to_complete = ['microwave', 'kettle', 'switch', 'slide']
+        elif task_set == "outofdistribution":
+            tasks_to_complete = ['microwave', 'kettle', "bottomknob", 'switch']
+        else:
+            raise ValueError(f"Unsupported tasks set: \"{task_set}\".")
+
+        # env = gym.make(task)
+        env = gym.make("random_kitchen-v1",
+                       tasks_to_complete=tasks_to_complete,
+                       datasets=datasets,
+                       framestack=3)
+
+        print("\nenv:", env)
+        print("\nenv._max_episode_steps:", env._max_episode_steps)
+        print("\nenv.env.env.tasks_to_complete:", env.env.env.tasks_to_complete)
+        print("\nenv.env.env._datasets_urls:", env.env.env._datasets_urls)
+        print("\nenv.env.env.env._frames:", env.env.env.env._frames)
+        print("\nenv.cameras:", env.cameras)
+        print("\nenv.observation_space:", env.observation_space)
+        # dataset = env.q_learning_dataset()
+        return env
         # assert proprio
-        assert action_repeat == 1
-        # tasks_list = task.split("+")
-        env = wrappers.KitchenMultipleViews(task=tasks_list, size=(128, 128), camera_ids=[0, 1], proprio=proprio, log_only_target_tasks=True)
-        env = wrappers.ActionRepeat(env, action_repeat)
-        env = wrappers.NormalizeActions(env)
-        env = wrappers.TimeLimit(env, ep_length)
-        env = FrameStack(env, num_stack=3)
     else:
         raise ValueError(f"Unsupported environment suite: \"{suite}\".")
     return env
 
-def load_episode(episode_file, suite, tasks_list):
+def load_episode(episode_file, task, tasks_list):
     with open(episode_file, 'rb') as f:
         episode = np.load(f, allow_pickle=True)
 
@@ -274,7 +277,7 @@ def load_episode(episode_file, suite, tasks_list):
     # extra_image_camera_1_rgb
     # extra_image_camera_gripper_rgb
 
-        if "standardkitchen" in suite:
+        if "standardkitchen" in task:
             keys = ["extra_image_camera_0_rgb", "extra_image_camera_1_rgb", "extra_image_camera_gripper_rgb"]
             img = np.concatenate([episode[key] for key in keys], axis=-1)
             episode["image"] = img
@@ -282,14 +285,16 @@ def load_episode(episode_file, suite, tasks_list):
     return episode
 
 def load_data(replay_buffer, offline_dataset_path, task, ep_length, num_stack, proprio, debug=False):
-    suite, task = task.split('_', 1)
-    tasks_list = get_task_list(task)
+    if "kitchen" in task:
+        tasks_list = task.split("_")[-1].split("+")
+    else:
+        tasks_list = None
 
     episode_files = glob(os.path.join(offline_dataset_path, '**', '*.npz'), recursive=True)
     total_transitions = 0
 
     for episode_file in tqdm.tqdm(episode_files, total=len(episode_files), desc="Loading offline data"):
-        episode = load_episode(episode_file, suite, tasks_list)
+        episode = load_episode(episode_file, task, tasks_list)
 
         # observation, done = env.reset(), False
         frames = collections.deque(maxlen=num_stack)
@@ -347,6 +352,8 @@ if __name__ == '__main__':
 
 
 """
+cd /iris/u/khatch/vd5rl/jaxrl2-irisfork/examples
+conda activate jaxrlfork
 unset LD_LIBRARY_PATH
 unset LD_PRELOAD
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.mujoco/mujoco210/bin
@@ -354,24 +361,25 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia-000
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
 export MUJOCO_GL="egl"
+export KITCHEN_DATASETS=/iris/u/khatch/vd5rl/datasets/diversekitchen
 
-XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
---task "standardkitchen_outofdistribution" \
---datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/kitchen2/kitchen_demos_multitask_lexa_view_extra_images_npz/friday_kettle_bottomknob_hinge_slide_first5 \
+XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_diversekitchen.py \
+--task "diversekitchen_outofdistribution-play_data" \
 --tqdm=true \
 --project vd5rl_kitchen \
 --algorithm cql \
 --proprio=true \
---description proprio \
---eval_episodes 5 \
---eval_interval 1000 \
---max_gradient_steps 500_000 \
---max_online_gradient_steps 500_000 \
---replay_buffer_size 1_000_000 \
+--description default \
+--eval_episodes 1 \
+--eval_interval 200 \
+--max_gradient_steps 10_000 \
+--replay_buffer_size 600_000 \
 --seed 0 \
 --debug=true
 
 
+--task "diversekitchen_indistribution-play+expert" \
 
-indistribution
+
+
 """

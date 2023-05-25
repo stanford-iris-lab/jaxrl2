@@ -127,7 +127,7 @@ class DDPMIQLLearner(Agent):
                                 hidden_dims=(128, 128),
                                 activations=mish,
                                 activate_final=False)
-        
+
         if decay_steps is not None:
             actor_lr = optax.cosine_decay_schedule(actor_lr, decay_steps)
 
@@ -137,7 +137,7 @@ class DDPMIQLLearner(Agent):
                                     activations=mish,
                                     use_layer_norm=actor_layer_norm,
                                     activate_final=False)
-            
+
             actor_def = DDPM(time_preprocess_cls=preprocess_time_cls,
                              cond_encoder_cls=cond_model_cls,
                              reverse_encoder_cls=base_model_cls)
@@ -150,14 +150,14 @@ class DDPMIQLLearner(Agent):
                                      dropout_rate=actor_dropout_rate,
                                      out_dim=action_dim,
                                      activations=mish)
-            
+
             actor_def = DDPM(time_preprocess_cls=preprocess_time_cls,
                              cond_encoder_cls=cond_model_cls,
                              reverse_encoder_cls=base_model_cls)
 
         else:
             raise ValueError(f'Invalid actor architecture: {actor_architecture}')
-        
+
         time = jnp.zeros((1, 1))
         observations = jnp.expand_dims(observations, axis = 0)
         actions = jnp.expand_dims(actions, axis = 0)
@@ -166,10 +166,10 @@ class DDPMIQLLearner(Agent):
 
         score_model = TrainState.create(apply_fn=actor_def.apply,
                                         params=actor_params,
-                                        tx=optax.adamw(learning_rate=actor_lr, 
+                                        tx=optax.adamw(learning_rate=actor_lr,
                                                        weight_decay=actor_weight_decay if actor_weight_decay is not None else 0.0,
                                                        mask=get_weight_decay_mask,))
-        
+
         target_score_model = TrainState.create(apply_fn=actor_def.apply,
                                                params=actor_params,
                                                tx=optax.GradientTransformation(
@@ -263,7 +263,7 @@ class DDPMIQLLearner(Agent):
         agent = agent.replace(value=value)
 
         return agent, info
-    
+
     def update_q(agent, batch: DatasetDict) -> Tuple[Agent, Dict[str, float]]:
         next_v = agent.value.apply_fn(
             {"params": agent.value.params}, batch["next_observations"]
@@ -303,7 +303,7 @@ class DDPMIQLLearner(Agent):
         key, rng = jax.random.split(rng, 2)
         noise_sample = jax.random.normal(
             key, (batch['actions'].shape[0], agent.act_dim))
-        
+
         alpha_hats = agent.alpha_hats[time]
         time = jnp.expand_dims(time, axis=1)
         alpha_1 = jnp.expand_dims(jnp.sqrt(alpha_hats), axis=1)
@@ -346,7 +346,7 @@ class DDPMIQLLearner(Agent):
                                        time,
                                        rngs={'dropout': key},
                                        training=True)
-            
+
             actor_loss = (((eps_pred - noise_sample) ** 2).sum(axis = -1) * weights).mean()
 
             return actor_loss, {'actor_loss': actor_loss, 'weights' : weights.mean()}
@@ -382,7 +382,7 @@ class DDPMIQLLearner(Agent):
         new_rng = rng
 
         return np.array(action.squeeze()), self.replace(rng=new_rng)
-    
+
     def sample_implicit_policy(self, observations: jnp.ndarray):
         rng = self.rng
 
@@ -416,7 +416,7 @@ class DDPMIQLLearner(Agent):
         new_rng = rng
 
         return np.array(action.squeeze()), self.replace(rng=new_rng)
-    
+
     def actor_loss_no_grad(agent, batch: DatasetDict):
         rng = agent.rng
         key, rng = jax.random.split(rng, 2)
@@ -424,7 +424,7 @@ class DDPMIQLLearner(Agent):
         key, rng = jax.random.split(rng, 2)
         noise_sample = jax.random.normal(
             key, (batch['actions'].shape[0], agent.act_dim))
-        
+
         alpha_hats = agent.alpha_hats[time]
         time = jnp.expand_dims(time, axis=1)
         alpha_1 = jnp.expand_dims(jnp.sqrt(alpha_hats), axis=1)
@@ -439,7 +439,7 @@ class DDPMIQLLearner(Agent):
                                        noisy_actions,
                                        time,
                                        training=False)
-            
+
             actor_loss = (((eps_pred - noise_sample) ** 2).sum(axis = -1)).mean()
 
             return actor_loss, {'actor_loss': actor_loss}
@@ -448,26 +448,26 @@ class DDPMIQLLearner(Agent):
         new_agent = agent.replace(rng=rng)
 
         return new_agent, info
-    
+
     @jax.jit
     def actor_update(self, batch: DatasetDict):
         new_agent = self
         new_agent, actor_info = new_agent.update_actor(batch)
         return new_agent, actor_info
-    
+
     @jax.jit
     def eval_loss(self, batch: DatasetDict):
         new_agent = self
         new_agent, actor_info = new_agent.actor_loss_no_grad(batch)
         return new_agent, actor_info
-    
+
     @jax.jit
     def critic_update(self, batch: DatasetDict):
         def slice(x):
             return x[:256]
 
         new_agent = self
-        
+
         mini_batch = jax.tree_util.tree_map(slice, batch)
         new_agent, critic_info = new_agent.update_v(mini_batch)
         new_agent, value_info = new_agent.update_q(mini_batch)
@@ -481,10 +481,10 @@ class DDPMIQLLearner(Agent):
 
         def first_half(x):
             return x[:batch_size]
-        
+
         def second_half(x):
             return x[batch_size:]
-        
+
         first_batch = jax.tree_util.tree_map(first_half, batch)
         second_batch = jax.tree_util.tree_map(second_half, batch)
 
@@ -493,7 +493,7 @@ class DDPMIQLLearner(Agent):
 
         def slice(x):
             return x[:256]
-        
+
         mini_batch = jax.tree_util.tree_map(slice, batch)
         new_agent, critic_info = new_agent.update_v(mini_batch)
         new_agent, value_info = new_agent.update_q(mini_batch)

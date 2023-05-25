@@ -11,7 +11,7 @@ from absl import app, flags
 from flax.metrics.tensorboard import SummaryWriter
 from ml_collections import config_flags
 
-from jaxrl2.evaluation import evaluate_kitchen
+from jaxrl2.evaluation import evaluate
 
 from jaxrl2.agents.pixel_cql import PixelCQLLearner
 from jaxrl2.agents.pixel_iql import PixelIQLLearner
@@ -129,8 +129,9 @@ def main(_):
     print('Start offline training')
     tbar = tqdm.tqdm(range(1, FLAGS.max_gradient_steps + 1), smoothing=0.1, disable=not FLAGS.tqdm)
     for i in tbar:
-        tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed} (offline)]")
+        tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}]  (offline)")
         batch = next(replay_buffer_iterator)
+        import pdb; pdb.set_trace()
         update_info = agent.update(batch)
 
         if i % FLAGS.log_interval == 0:
@@ -140,7 +141,7 @@ def main(_):
                     # print(k, v)
 
         if i % FLAGS.eval_interval == 0:
-            eval_info = evaluate_kitchen(agent,
+            eval_info = evaluate(agent,
                                  eval_env,
                                  num_episodes=FLAGS.eval_episodes,
                                  progress_bar=False)
@@ -215,37 +216,16 @@ def main(_):
 
         agent.save_checkpoint(os.path.join(save_dir, "online_checkpoints"), i + FLAGS.max_gradient_steps, -1)
 
-
-def get_task_list(task):
-    if task == "indistribution":
-        tasks_list = ['microwave', 'kettle', 'light switch', 'slide cabinet']
-    elif task == "outofdistribution":
-        tasks_list = ['microwave', 'kettle', "bottom burner", 'light switch']
-    else:
-        raise ValueError(f"Unsupported task: \"{task}\".")
-
-    return tasks_list
-
 def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
     suite, task = task.split('_', 1)
 
-    tasks_list = get_task_list(task)
-
-    if "singleviewkitchen" in suite:
-        assert not proprio
+    if "adroithand" in suite:
+        assert proprio
         assert action_repeat == 1
-        # tasks_list = task.split("+")
+        if "human" in task and "cloned" in task:
+            task = task.replace("-cloned", "")
 
-        env = wrappers.Kitchen(task=tasks_list, size=(64, 64), proprio=proprio, log_only_target_tasks=True)
-        env = wrappers.ActionRepeat(env, action_repeat)
-        env = wrappers.NormalizeActions(env)
-        env = wrappers.TimeLimit(env, ep_length)
-        env = FrameStack(env, num_stack=3)
-    elif "standardkitchen" in suite:
-        # assert proprio
-        assert action_repeat == 1
-        # tasks_list = task.split("+")
-        env = wrappers.KitchenMultipleViews(task=tasks_list, size=(128, 128), camera_ids=[0, 1], proprio=proprio, log_only_target_tasks=True)
+        env = wrappers.AdroitHand(task, 128, 128, proprio=proprio, camera_angle=camera_angle)
         env = wrappers.ActionRepeat(env, action_repeat)
         env = wrappers.NormalizeActions(env)
         env = wrappers.TimeLimit(env, ep_length)
@@ -254,7 +234,7 @@ def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
         raise ValueError(f"Unsupported environment suite: \"{suite}\".")
     return env
 
-def load_episode(episode_file, suite, tasks_list):
+def load_episode(episode_file, task, tasks_list):
     with open(episode_file, 'rb') as f:
         episode = np.load(f, allow_pickle=True)
 
@@ -274,7 +254,7 @@ def load_episode(episode_file, suite, tasks_list):
     # extra_image_camera_1_rgb
     # extra_image_camera_gripper_rgb
 
-        if "standardkitchen" in suite:
+        if "standardkitchen" in task:
             keys = ["extra_image_camera_0_rgb", "extra_image_camera_1_rgb", "extra_image_camera_gripper_rgb"]
             img = np.concatenate([episode[key] for key in keys], axis=-1)
             episode["image"] = img
@@ -282,14 +262,16 @@ def load_episode(episode_file, suite, tasks_list):
     return episode
 
 def load_data(replay_buffer, offline_dataset_path, task, ep_length, num_stack, proprio, debug=False):
-    suite, task = task.split('_', 1)
-    tasks_list = get_task_list(task)
+    if "kitchen" in task:
+        tasks_list = task.split("_")[-1].split("+")
+    else:
+        tasks_list = None
 
     episode_files = glob(os.path.join(offline_dataset_path, '**', '*.npz'), recursive=True)
     total_transitions = 0
 
     for episode_file in tqdm.tqdm(episode_files, total=len(episode_files), desc="Loading offline data"):
-        episode = load_episode(episode_file, suite, tasks_list)
+        episode = load_episode(episode_file, task, tasks_list)
 
         # observation, done = env.reset(), False
         frames = collections.deque(maxlen=num_stack)
@@ -347,6 +329,8 @@ if __name__ == '__main__':
 
 
 """
+cd /iris/u/khatch/vd5rl/jaxrl2-irisfork/examples
+conda activate jaxrlfork
 unset LD_LIBRARY_PATH
 unset LD_PRELOAD
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.mujoco/mujoco210/bin
@@ -354,24 +338,28 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia-000
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
 export MUJOCO_GL="egl"
+export KITCHEN_DATASETS=/iris/u/khatch/vd5rl/datasets/diversekitchen
 
-XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
---task "standardkitchen_outofdistribution" \
---datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/kitchen2/kitchen_demos_multitask_lexa_view_extra_images_npz/friday_kettle_bottomknob_hinge_slide_first5 \
+
+# hammer, use camera2
+# door, use camera4
+# pen, use camera5
+# relocate, camera6
+
+
+XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_adroit.py \
+--task "adroithand_hammer-human-v0" \
+--datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/adroit_hand/hammer-human-v1/camera2/imsize_64 \
 --tqdm=true \
+--camera_angle=camera2 \
 --project vd5rl_kitchen \
 --algorithm cql \
 --proprio=true \
---description proprio \
---eval_episodes 5 \
---eval_interval 1000 \
---max_gradient_steps 500_000 \
---max_online_gradient_steps 500_000 \
---replay_buffer_size 1_000_000 \
+--description default \
+--eval_episodes 1 \
+--eval_interval 200 \
+--max_gradient_steps 10_000 \
+--replay_buffer_size 600_000 \
 --seed 0 \
 --debug=true
-
-
-
-indistribution
 """

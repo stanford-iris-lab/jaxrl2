@@ -36,6 +36,8 @@ class PixelMultiplexer(nn.Module):
         x = nn.LayerNorm()(x)
         x = nn.tanh(x)
 
+
+
         if "states" in observations:
             y = nn.Dense(self.latent_dim, kernel_init=default_init())(
                 observations["states"]

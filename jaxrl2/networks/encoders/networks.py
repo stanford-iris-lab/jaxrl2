@@ -35,6 +35,7 @@ class Encoder(nn.Module):
             x = nn.relu(x)
 
         return x.reshape((*x.shape[:-3], -1))
+
 class IdentityEncoder(nn.Module):
     @nn.compact
     def __call__(self, observations: jnp.ndarray, training=False) -> jnp.ndarray:
@@ -67,7 +68,7 @@ class PixelMultiplexer(nn.Module):
                  observations: Union[FrozenDict, Dict],
                  actions: Optional[jnp.ndarray] = None,
                  training: bool = False):
-        
+
         observations = FrozenDict(observations)
 
         if self.use_multiplicative_cond:
@@ -85,14 +86,28 @@ class PixelMultiplexer(nn.Module):
             x = nn.LayerNorm()(x)
             x = nn.tanh(x)
 
+
+
         x = observations.copy(add_or_replace={'pixels': x})
+
+        # ###===###
+        # if "states" in observations:
+        #     y = nn.Dense(self.latent_dim, kernel_init=default_init())(
+        #         observations["states"]
+        #     )
+        #     y = nn.LayerNorm()(y)
+        #     y = nn.tanh(y)
+        # 
+        #     # x = jnp.concatenate([x, y], axis=-1)
+        #     x = x.copy(add_or_replace={'states': y})
+        # ###---###
 
         print('fully connected keys', x.keys())
         if actions is None:
             return self.network(x, training=training)
         else:
             return self.network(x, actions, training=training)
-        
+
 
 '''
 Split into Encoder and Decoder
@@ -145,7 +160,7 @@ class PixelMultiplexerEncoderWithoutFinal(nn.Module):
             x = self.encoder(observations['pixels'], training, cond_var=observations['task_id'])
         else:
             x = self.encoder(observations['pixels'], training)
-        
+
         if self.use_bottleneck:
             x = nn.Dense(self.latent_dim, kernel_init=xavier_init())(x)
 
@@ -156,14 +171,14 @@ class PixelMultiplexerEncoderWithoutFinal(nn.Module):
 class PixelMultiplexerDecoderWithDropout(nn.Module):
     network: nn.Module
     dropout_rate: Optional[float] = None
-    
+
     @nn.compact
-    def __call__(self, 
-                 embedding: Union[FrozenDict, Dict], 
-                 actions: Optional[jnp.ndarray] = None, 
+    def __call__(self,
+                 embedding: Union[FrozenDict, Dict],
+                 actions: Optional[jnp.ndarray] = None,
                  training: bool = False,
                  compute_lse: bool = False):
-        
+
         if self.dropout_rate is not None:
             print ('Pixel multiplexer decoder with dropout.... using dataset')
             # Now apply dropout on the image embedding to prevent it
@@ -174,7 +189,7 @@ class PixelMultiplexerDecoderWithDropout(nn.Module):
             x = nn.Dropout(rate=self.dropout_rate)(
                         x, deterministic=not training)
             embedding = embedding.copy(add_or_replace={'pixels': x})
-            
+
         if isinstance(self.network, StateActionEnsembleAutoregressive):
             if actions is None:
                 return self.network(embedding, training=training, compute_lse=compute_lse)
@@ -189,14 +204,14 @@ class PixelMultiplexerDecoderWithDropout(nn.Module):
 
 class PixelMultiplexerDecoder(nn.Module):
     network: nn.Module
-    
+
     @nn.compact
-    def __call__(self, 
-                 embedding: Union[FrozenDict, Dict], 
-                 actions: Optional[jnp.ndarray] = None, 
+    def __call__(self,
+                 embedding: Union[FrozenDict, Dict],
+                 actions: Optional[jnp.ndarray] = None,
                  training: bool = False,
                  compute_lse: bool = False):
-        
+
         if isinstance(self.network, StateActionEnsembleAutoregressive):
             if actions is None:
                 return self.network(embedding, training=training, compute_lse=compute_lse)
@@ -211,13 +226,13 @@ class PixelMultiplexerDecoder(nn.Module):
 
 class AuxPixelMultiplexerDecoder(nn.Module):
     network: nn.Module
-    
+
     @nn.compact
-    def __call__(self, 
-                 embedding: Union[FrozenDict, Dict], 
-                 actions: Optional[jnp.ndarray] = None, 
+    def __call__(self,
+                 embedding: Union[FrozenDict, Dict],
+                 actions: Optional[jnp.ndarray] = None,
                  training: bool = False,
-                 version_type: int = 0, 
+                 version_type: int = 0,
                  compute_lse: bool = False):
         if isinstance(self.network, StateActionEnsembleAutoregressive):
             if actions is None:

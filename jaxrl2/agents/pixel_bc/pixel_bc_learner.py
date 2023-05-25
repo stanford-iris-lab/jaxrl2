@@ -11,6 +11,7 @@ from flax.training.train_state import TrainState
 from jaxrl2.agents.agent import Agent
 from jaxrl2.agents.bc.actor_updater import log_prob_update
 from jaxrl2.agents.drq.augmentations import batched_random_crop
+from jaxrl2.agents.drq.drq_learner import _unpack
 from jaxrl2.data.dataset import DatasetDict
 # from jaxrl2.networks.encoders import D4PGEncoder, ResNetV2Encoder
 from jaxrl2.networks.encoders import D4PGEncoderGroups ###===### ###---###
@@ -27,6 +28,8 @@ from glob import glob ###---###
 def _update_jit(
     rng: PRNGKey, actor: TrainState, batch: TrainState
 ) -> Tuple[PRNGKey, TrainState, TrainState, Params, TrainState, Dict[str, float]]:
+    batch = _unpack(batch)
+
     rng, key = jax.random.split(rng)
     aug_pixels = batched_random_crop(key, batch["observations"]["pixels"])
     observations = batch["observations"].copy(add_or_replace={"pixels": aug_pixels})
