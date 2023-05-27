@@ -24,7 +24,8 @@ def update_critic(
         discount: float, backup_entropy: bool,
         critic_reduction: str, cql_alpha: float,
         max_q_backup: bool, dr3_coefficient: float,
-        use_sarsa_backups: bool) -> Tuple[TrainState, Dict[str, float]]:
+        use_sarsa_backups: bool, bound_q_with_mc: bool
+) -> Tuple[TrainState, Dict[str, float]]:
 
     key, key_pi, key_random = jax.random.split(key, num=3)
     if max_q_backup:
@@ -119,17 +120,25 @@ def update_critic(
 
     )
     random_pi = (1.0/2.0) ** policy_actions.shape[-1]
+    
+    if bound_q_with_mc is not None:
+        global  bound_q_with_mc_global
+        bound_q_with_mc_global = bound_q_with_mc
 
-    def critic_loss_fn(
-            critic_params: Params) -> Tuple[jnp.ndarray, Dict[str, float]]:
-        qs = critic.apply_fn({'params': critic_params}, batch['observations'],
-                             batch['actions'])
+    def critic_loss_fn(critic_params: Params) -> Tuple[jnp.ndarray, Dict[str, float]]:
+        qs = critic.apply_fn({'params': critic_params}, batch['observations'], batch['actions'])
         critic_loss = ((qs - target_q)**2).mean()
         bellman_loss = critic_loss
 
         # CQL loss
         q_pi = critic.apply_fn({'params': critic_params}, observations_tiled,
                                 policy_actions)
+        if bound_q_with_mc_global:
+            mc_returns_tiled = jnp.reshape(jnp.repeat(batch['mc_returns'], NUM_CQL_REPEAT), (1, -1))
+            mc_returns = jnp.repeat(mc_returns_tiled, q_pi.shape[0], axis=0)
+            q_pi = jnp.maximum(q_pi, mc_returns)
+            mc_bounded_rate = jnp.sum(q_pi==mc_returns) / jnp.sum(mc_returns==mc_returns)
+            
         q_pi_for_is = (q_pi[0] - policy_log_probs, q_pi[1] - policy_log_probs)
         q_pi_for_is = (
             jnp.reshape(q_pi_for_is[0], (batch['actions'].shape[0], NUM_CQL_REPEAT)),
@@ -156,8 +165,8 @@ def update_critic(
         ## Logging only
         diff_rand_data = q_random.mean() - qs.mean()
         diff_pi_data = q_pi.mean() - qs.mean()
-
-        return critic_loss, {
+        
+        things_to_log = {
             'critic_loss': critic_loss,
             'bellman_loss': bellman_loss,
             'cql_loss_mean': cql_loss,
@@ -180,6 +189,11 @@ def update_critic(
             'actions_max': batch['actions'].max(),
             'actions_min': batch['actions'].min(),
         }
+        
+        if bound_q_with_mc_global:
+            things_to_log['mc_bounded_rate'] = mc_bounded_rate
+
+        return critic_loss, things_to_log
 
     grads, info = jax.grad(critic_loss_fn, has_aux=True)(critic.params)
     new_critic = critic.apply_gradients(grads=grads)
