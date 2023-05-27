@@ -8,6 +8,7 @@ import gym
 import mujoco_py
 # import d4rl
 import benchmark
+from benchmark.domains import adroit2
 import metaworld
 import numpy as np
 from PIL import Image

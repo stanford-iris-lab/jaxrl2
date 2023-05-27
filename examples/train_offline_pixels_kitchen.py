@@ -129,7 +129,7 @@ def main(_):
     print('Start offline training')
     tbar = tqdm.tqdm(range(1, FLAGS.max_gradient_steps + 1), smoothing=0.1, disable=not FLAGS.tqdm)
     for i in tbar:
-        tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed} (offline)]")
+        tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}] (offline)")
         batch = next(replay_buffer_iterator)
         update_info = agent.update(batch)
 
@@ -146,6 +146,10 @@ def main(_):
                                  progress_bar=False)
             for k, v in eval_info.items():
                 wandb.log({f'evaluation/{k}': v}, step=i)
+
+            wandb.log({f"replay_buffer/capacity": replay_buffer._capacity}, step=i)
+            wandb.log({f"replay_buffer/size": replay_buffer._size}, step=i)
+            wandb.log({f"replay_buffer/fullness": replay_buffer._size / replay_buffer._capacity}, step=i)
 
     agent.save_checkpoint(os.path.join(save_dir, "offline_checkpoints"), i, -1)
 
@@ -189,9 +193,6 @@ def main(_):
                     wandb.log({f"training/{decode[k]}": v}, step=i + FLAGS.max_gradient_steps)
                 observation, done = env.reset(), False
 
-                wandb.log({f"replay_buffer/capacity": replay_buffer._capacity}, step=i + FLAGS.max_gradient_steps)
-                wandb.log({f"replay_buffer/size": replay_buffer._size}, step=i + FLAGS.max_gradient_steps)
-
             batch = next(replay_buffer_iterator)
             update_info = agent.update(batch)
 
@@ -212,6 +213,10 @@ def main(_):
                         v += 1000
 
                     wandb.log({f'evaluation/{k}': v}, step=i + FLAGS.max_gradient_steps)
+
+                wandb.log({f"replay_buffer/capacity": replay_buffer._capacity}, step=i + FLAGS.max_gradient_steps)
+                wandb.log({f"replay_buffer/size": replay_buffer._size}, step=i + FLAGS.max_gradient_steps)
+                wandb.log({f"replay_buffer/fullness": replay_buffer._size / replay_buffer._capacity}, step=i + FLAGS.max_gradient_steps)
 
         agent.save_checkpoint(os.path.join(save_dir, "online_checkpoints"), i + FLAGS.max_gradient_steps, -1)
 
