@@ -187,6 +187,7 @@ def main(_):
                     next_observations=next_observation,
                 )
             )
+
             observation = next_observation
 
             if done:
@@ -195,7 +196,7 @@ def main(_):
                     wandb.log({f"training/{decode[k]}": v}, step=i + FLAGS.max_gradient_steps)
                 observation, done = env.reset(), False
 
-            batch = replay_buffer.sample(FLAGS.batch_size)
+            batch = replay_buffer.sample(FLAGS.batch_size, reinsert_offline=False)
             update_info = agent.update(batch)
 
             if i % FLAGS.log_interval == 0:
@@ -288,68 +289,6 @@ def load_episode(episode_file, task, tasks_list):
             episode["image"] = img
 
     return episode
-
-def load_data(replay_buffer, offline_dataset_path, task, ep_length, num_stack, proprio, debug=False):
-    if "kitchen" in task:
-        tasks_list = task.split("_")[-1].split("+")
-    else:
-        tasks_list = None
-
-    episode_files = glob(os.path.join(offline_dataset_path, '**', '*.npz'), recursive=True)
-    total_transitions = 0
-
-    for episode_file in tqdm.tqdm(episode_files, total=len(episode_files), desc="Loading offline data"):
-        episode = load_episode(episode_file, task, tasks_list)
-
-        # observation, done = env.reset(), False
-        frames = collections.deque(maxlen=num_stack)
-        for _ in range(num_stack):
-            frames.append(episode["image"][0])
-
-        observation = dict(pixels=np.stack(frames, axis=-1))
-        if proprio:
-            observation["states"] = episode["proprio"][0]
-        done = False
-
-        i = 1
-        while not done:
-            # action = agent.sample_actions(observation)
-            action = episode["action"][i]
-
-            # next_observation, reward, done, info = env.step(action)
-            frames.append(episode["image"][i])
-            next_observation = dict(pixels=np.stack(frames, axis=-1))
-            if proprio:
-                next_observation["states"] = episode["proprio"][i]
-            reward = episode["reward"][i]
-            done = i >= episode["image"].shape[0] - 1
-            # print(f"i: {i}, done: {done}")
-            info = {}
-
-            if not done or "TimeLimit.truncated" in info:
-                mask = 1.0
-            else:
-                mask = 0.0
-            replay_buffer.insert(
-                dict(
-                    observations=observation,
-                    actions=action,
-                    rewards=reward,
-                    masks=mask,
-                    dones=done,
-                    next_observations=next_observation,
-                )
-            )
-            observation = next_observation
-            total_transitions += 1
-            i += 1
-
-            if debug and total_transitions > 5000:
-                return
-
-    print(f"Loaded {len(episode_files)} episodes and {total_transitions} total transitions.")
-    print(f"replay_buffer capacity {replay_buffer._capacity}, replay_buffer size {replay_buffer._size}.")
-    assert replay_buffer._capacity >= total_transitions
 
 
 if __name__ == '__main__':
