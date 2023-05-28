@@ -9,6 +9,10 @@ from jaxrl2.networks.encoders.cross_norm import CrossNorm
 
 ModuleDef = Any
 
+class GroupConvWrapper(nn.Conv):
+    def __init__(self, features, *args, groups=1, **kwargs):
+        super(GroupConvWrapper, self).__init__(features * groups, *args, feature_group_count=groups, **kwargs)
+
 
 class MyGroupNorm(nn.GroupNorm):
 
@@ -91,7 +95,7 @@ class ResNetEncoder(nn.Module):
     @nn.compact
     def __call__(self, observations: jnp.ndarray, train: bool = True,
                  cond_var=None):
-        
+
         x = observations.astype(jnp.float32) / 255.0
         x = jnp.reshape(x, (*x.shape[:-2], -1))
 
@@ -114,7 +118,7 @@ class ResNetEncoder(nn.Module):
                            epsilon=1e-5,
                            dtype=self.dtype)
         elif self.norm == 'layer':
-            norm = partial(nn.LayerNorm, 
+            norm = partial(nn.LayerNorm,
                 epsilon=1e-5,
                 dtype=self.dtype,
             )
@@ -127,6 +131,8 @@ class ResNetEncoder(nn.Module):
                  padding=[(3, 3), (3, 3)],
                  name='conv_init')(x)
         print('post conv1', x.shape)
+
+
 
         x = norm(name='bn_init')(x)
         x = nn.relu(x)
@@ -149,7 +155,7 @@ class ResNetEncoder(nn.Module):
                     print ('x_mult shape:', x_mult.shape)
                     x = x * x_mult
             print('post block ', x.shape)
-            
+
 
         if self.use_spatial_learned_embeddings:
             height, width, channel = x.shape[len(x.shape) - 3:]

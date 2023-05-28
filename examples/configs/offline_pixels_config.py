@@ -16,7 +16,16 @@ def get_bc_config():
     config.cnn_groups = 3 ###===### ###---###
     config.latent_dim = 50
 
-    config.encoder = "d4pg"
+    # config.encoder = "d4pg"
+    # config.encoder = "resnet_34_v1"
+    # config.encoder = "resnet_18_v1"
+    config.encoder = "impala"
+
+    config.encoder_norm = 'group'
+    config.use_spatial_softmax = False
+    config.softmax_temperature = -1,
+    config.use_multiplicative_cond = False
+    config.use_spatial_learned_embeddings = True
 
 
 

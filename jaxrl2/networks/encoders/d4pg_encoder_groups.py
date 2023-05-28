@@ -7,6 +7,7 @@ import jax
 from jaxrl2.networks.constants import default_init
 
 
+
 class D4PGEncoderGroups(nn.Module):
     features: Sequence[int] = (32, 32, 32, 32)
     filters: Sequence[int] = (2, 1, 1, 1)
