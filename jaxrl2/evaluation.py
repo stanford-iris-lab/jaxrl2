@@ -17,7 +17,11 @@ def evaluate(agent, env: gym.Env, num_episodes: int, progress_bar=False) -> Dict
     ###---###
         observation, done = env.reset(), False
         while not done:
-            action = agent.eval_actions(observation)
+            out = agent.eval_actions(observation)
+            if isinstance(out, tuple):
+                action, agent = out
+            else:
+                action = out
             observation, _, done, _ = env.step(action)
 
     return {

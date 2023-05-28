@@ -16,7 +16,9 @@ from jaxrl2.evaluation import evaluate_kitchen
 from jaxrl2.agents.pixel_cql import PixelCQLLearner
 from jaxrl2.agents.pixel_iql import PixelIQLLearner
 from jaxrl2.agents.pixel_bc import PixelBCLearner
-from jaxrl2.agents.cql_encodersep_parallel import PixelCQLLearnerEncoderSepParallel
+from jaxrl2.agents.pixel_ddpm_bc import PixelDDPMBCLearner
+
+#from jaxrl2.agents.cql_encodersep_parallel import PixelCQLLearnerEncoderSepParallel
 
 import jaxrl2.wrappers.combo_wrappers as wrappers
 from jaxrl2.wrappers.frame_stack import FrameStack
@@ -131,7 +133,12 @@ def main(_):
     for i in tbar:
         tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}] (offline)")
         batch = next(replay_buffer_iterator)
-        update_info = agent.update(batch)
+        out = agent.update(batch)
+
+        if isinstance(out, tuple):
+            agent, update_info = out
+        else:
+            update_info = out
 
         if i % FLAGS.log_interval == 0:
             for k, v in update_info.items():
@@ -160,7 +167,11 @@ def main(_):
         for i in tbar:
             tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed} (online)]")
 
-            action = agent.sample_actions(observation)
+            out = agent.sample_actions(observation)
+            if isinstance(out, tuple):
+                action, agent = out
+            else:
+                action = out
 
             env_step = env.step(action)
             if len(env_step) == 4:
@@ -194,7 +205,12 @@ def main(_):
                 observation, done = env.reset(), False
 
             batch = next(replay_buffer_iterator)
-            update_info = agent.update(batch)
+            out = agent.update(batch)
+
+            if isinstance(out, tuple):
+                agent, update_info = out
+            else:
+                update_info = out
 
             if i % FLAGS.log_interval == 0:
                 for k, v in update_info.items():

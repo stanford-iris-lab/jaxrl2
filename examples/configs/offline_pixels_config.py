@@ -18,10 +18,57 @@ def get_bc_config():
 
     config.encoder = "d4pg"
 
-
-
     config.dropout_rate = config_dict.placeholder(float)
     config.cosine_decay = True
+
+    return config
+
+def get_dppm_bc_config():
+    config = ml_collections.ConfigDict()
+
+    config.actor_lr = 3e-4
+
+    config.cnn_features = (16, 32, 64, 128, 256)
+    config.cnn_filters = (3, 3, 3, 3, 3)
+    config.cnn_strides = (2, 2, 2, 2, 2)
+    config.cnn_padding = "VALID"
+    config.cnn_groups = 3 ###===### ###---###
+    config.latent_dim = 50
+
+    config.encoder = "d4pg"
+
+    config.cosine_decay = True
+    config.use_layer_norm = True 
+    config.dropout_rate = 0.1
+
+    config.dropout_rate = config_dict.placeholder(float)
+
+    return config
+
+def get_idql_config():
+    config = ml_collections.ConfigDict()
+
+    config.actor_lr = 3e-4
+    config.critic_lr = 3e-4
+    config.value_lr = 3e-4
+
+    config.hidden_dims = (256, 256)
+
+    config.cnn_features = (16, 32, 64, 128, 256)
+    config.cnn_filters = (3, 3, 3, 3, 3)
+    config.cnn_strides = (2, 2, 2, 2, 2)
+    config.cnn_padding = "VALID"
+    config.cnn_groups = 3 ###===### ###---###
+    config.latent_dim = 50
+
+    config.discount = 0.99
+
+    config.expectile = 0.7  # The actual tau for expectiles.
+    config.cosine_decay = True
+
+    config.tau = 0.005
+    config.use_layer_norm = True 
+    config.dropout_rate = 0.1
 
     return config
 
@@ -269,6 +316,9 @@ def get_config(config_string):
         "bc": ml_collections.ConfigDict(
             {"model_constructor": "PixelBCLearner", "model_config": get_bc_config()}
         ),
+        "ddpm_bc": ml_collections.ConfigDict(
+            {"model_constructor": "PixelDDPMBCLearner", "model_config": get_ddpm_bc_config()}
+        ),
         "iql": ml_collections.ConfigDict(
             {"model_constructor": "PixelIQLLearner", "model_config": get_iql_config()}
         ),
@@ -278,7 +328,6 @@ def get_config(config_string):
         "calql": ml_collections.ConfigDict(
             {"model_constructor": "PixelCQLLearnerEncoderSepParallel", "model_config": get_calql_config()}
         ),
-
         "bc_adroit": ml_collections.ConfigDict(
             {"model_constructor": "PixelBCLearner", "model_config": get_adroit_bc_config()}
         ),
