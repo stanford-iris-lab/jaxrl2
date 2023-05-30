@@ -196,12 +196,6 @@ def get_idql_config():
     config.value_lr = 3e-4
 
     config.hidden_dims = (256, 256)
-
-    #config.cnn_features = (16, 32, 64, 128, 256)
-    #config.cnn_filters = (3, 3, 3, 3, 3)
-    #config.cnn_strides = (2, 2, 2, 2, 2)
-    #config.cnn_padding = "VALID"
-    #config.cnn_groups = 3 ###===### ###---###
     config.latent_dim = 50
 
     config.discount = 0.99
@@ -210,7 +204,6 @@ def get_idql_config():
     config.cosine_decay = True
 
     config.encoder = "resnet"
-
     config.tau = 0.005
     config.use_layer_norm = True
     config.dropout_rate = 0.1

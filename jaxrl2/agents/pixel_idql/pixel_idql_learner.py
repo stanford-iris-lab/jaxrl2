@@ -9,13 +9,18 @@ from flax import struct
 from flax.training.train_state import TrainState
 import jax.numpy as jnp
 import flax.linen as nn
-from jaxrl5.agents.agent import Agent
-from jaxrl5.agents.drq.augmentations import batched_random_crop
-from jaxrl5.data.dataset import DatasetDict
+from jaxrl2.agents.drq.augmentations import batched_random_crop
+from jaxrl2.data.dataset import DatasetDict
 from jaxrl2.networks.jaxrl5_networks import (MLP, Ensemble, StateActionValue, StateValue, 
                                           DDPM, FourierFeatures, cosine_beta_schedule, PixelMultiplexer,
                                           ddpm_sampler, MLPResNet, get_weight_decay_mask, vp_beta_schedule)
 from jaxrl2.networks.jaxrl5_networks.encoders import D4PGEncoder, ResNetV2Encoder
+from jaxrl2.types import Params, PRNGKey
+import numpy as np
+
+def expectile_loss(diff, expectile=0.8):
+    weight = jnp.where(diff > 0, expectile, (1 - expectile))
+    return weight * (diff**2)
 
 # Helps to minimize CPU to GPU transfer.
 def _unpack(batch):
@@ -36,7 +41,6 @@ def _unpack(batch):
 
     return batch
 
-
 def _share_encoder(source, target):
     replacers = {}
 
@@ -50,6 +54,20 @@ def _share_encoder(source, target):
 
 def mish(x):
     return x * jnp.tanh(nn.softplus(x))
+
+class Agent(struct.PyTreeNode):
+    actor: TrainState
+    rng: PRNGKey
+
+    def eval_actions(self, observations: np.ndarray) -> np.ndarray:
+        actions = _eval_actions(self.actor.apply_fn, self.actor.params, observations)
+        return np.asarray(actions), self.replace(rng=self.rng)
+
+    def sample_actions(self, observations: np.ndarray) -> np.ndarray:
+        actions, new_rng = _sample_actions(
+            self.rng, self.actor.apply_fn, self.actor.params, observations
+        )
+        return np.asarray(actions), self.replace(rng=new_rng)
 
 class PixelIDQLLearner(Agent):
     critic: TrainState
@@ -105,6 +123,7 @@ class PixelIDQLLearner(Agent):
         tau: float = 0.005,
         discount: float = 0.99,
         expectile: float = 0.7,
+        num_qs: int = 2,
         decay_steps: Optional[int] = None,
     ):
         """
@@ -236,7 +255,7 @@ class PixelIDQLLearner(Agent):
         )
 
         value_cls = partial(StateValue, base_cls=critic_base_cls)
-        value_cls = partial(Ensemble, net_cls=value_cls, num=num_qs)
+        #value_cls = partial(Ensemble, net_cls=value_cls, num=num_qs)
         value_def = PixelMultiplexer(
             encoder_cls=encoder_cls,
             network_cls=value_cls,
@@ -244,9 +263,9 @@ class PixelIDQLLearner(Agent):
             pixel_keys=pixel_keys,
             depth_keys=depth_keys,
         )
-        value_params = value_def.init(vakue_key, observations)["params"]
+        value_params = value_def.init(value_key, observations)["params"]
         value = TrainState.create(
-            apply_fn=critic_def.apply,
+            apply_fn=value_def.apply,
             params=value_params,
             tx=optax.adam(learning_rate=value_lr),
         )
@@ -271,6 +290,7 @@ class PixelIDQLLearner(Agent):
             ddpm_temperature=ddpm_temperature,
             actor_tau=actor_tau,
             tau=tau,
+            discount=discount,
             expectile=expectile,
         )
     
@@ -326,7 +346,7 @@ class PixelIDQLLearner(Agent):
 
         def value_loss_fn(value_params) -> Tuple[jnp.ndarray, Dict[str, float]]:
             v = agent.value.apply_fn({"params": value_params}, batch["observations"])
-            value_loss = expectile_loss(q - v, agent.critic_hyperparam).mean()
+            value_loss = expectile_loss(q - v, agent.expectile).mean()
 
             return value_loss, {"value_loss": value_loss, "v": v.mean()}
 
@@ -343,7 +363,6 @@ class PixelIDQLLearner(Agent):
         )
 
         target_q = batch["rewards"] + agent.discount * batch["masks"] * next_v
-        batch_size = batch["observations"].shape[0]
 
         def critic_loss_fn(critic_params) -> Tuple[jnp.ndarray, Dict[str, float]]:
             qs = agent.critic.apply_fn(
@@ -376,8 +395,8 @@ class PixelIDQLLearner(Agent):
         if "pixels" not in batch["next_observations"]:
             batch = _unpack(batch)
         
-        value = _share_encoder(source=new_agent.critic, target=new_agent.value)
-        new_agent = new_agent.replace(value=value)
+        value = _share_encoder(source=agent.critic, target=agent.value)
+        agent = agent.replace(value=value)
 
         # Not sure if actor should share encoder with critic, but it's fully disconnected so it probably doesn't matter...?
 
@@ -392,7 +411,7 @@ class PixelIDQLLearner(Agent):
             }
         )
 
-        batch_size = batch['observations'].shape[0]
+        batch_size = batch['observations']['pixels'].shape[0]
 
         def first_half(x):
             return x[:batch_size//2]
@@ -403,16 +422,18 @@ class PixelIDQLLearner(Agent):
         first_batch = jax.tree_util.tree_map(first_half, batch)
         second_batch = jax.tree_util.tree_map(second_half, batch)
 
-        agent, _ = self.update_actor(agent, first_batch)
-        agent, actor_info = self.update_actor(agent, second_batch) #Take two steps on actor for every step on critic
+        agent, _ = agent.update_actor(first_batch)
+        agent, actor_info = agent.update_actor(second_batch) #Take two steps on actor for every step on critic
+
+        critic_batch_size = min(256, batch_size)
 
         def slice(x):
-            return x[:256]
+            return x[:critic_batch_size]
         
         mini_batch = jax.tree_util.tree_map(slice, batch)
 
-        agent, v_info = self.update_v(agent, mini_batch)
-        agent, q_info = self.update_q(agent, mini_batch)
+        agent, v_info = agent.update_v(mini_batch)
+        agent, q_info = agent.update_q(mini_batch)
 
         info = {**actor_info, **v_info, **q_info}
 
@@ -426,8 +447,8 @@ class PixelIDQLLearner(Agent):
         if "pixels" not in batch["next_observations"]:
             batch = _unpack(batch)
         
-        value = _share_encoder(source=new_agent.critic, target=new_agent.value)
-        new_agent = new_agent.replace(value=value)
+        value = _share_encoder(source=agent.critic, target=agent.value)
+        new_agent = agent.replace(value=value)
 
         rng, key = jax.random.split(agent.rng)
         observations = self.data_augmentation_fn(key, batch["observations"])
@@ -445,8 +466,8 @@ class PixelIDQLLearner(Agent):
         
         batch = jax.tree_util.tree_map(slice, batch)
 
-        agent, v_info = self.update_v(agent, batch)
-        agent, q_info = self.update_q(agent, batch)
+        agent, v_info = agent.update_v(batch)
+        agent, q_info = agent.update_q(batch)
 
         info = {**v_info, **q_info}
 
@@ -472,4 +493,4 @@ class PixelIDQLLearner(Agent):
     
     @jax.jit
     def sample_actions(self, observations: jnp.ndarray):
-        return self.eval_actions(observations)
+        return self.eval_actions(observations) #Just take argmax for online finetuning
