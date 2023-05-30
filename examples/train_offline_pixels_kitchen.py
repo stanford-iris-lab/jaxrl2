@@ -38,7 +38,7 @@ flags.DEFINE_string('save_dir', './results', 'Tensorboard logging dir.')
 flags.DEFINE_string('project', "vd5rl", 'WandB project.')
 flags.DEFINE_string('algorithm', "cql", 'Which offline RL algorithm to use.')
 flags.DEFINE_string('description', "default", 'WandB project.')
-flags.DEFINE_string('task', "microwave", 'Task for the kitchen env.')
+flags.DEFINE_string('task', "diversekitchen_indistribution-expert_demos", 'Task for the kitchen env.')
 flags.DEFINE_string('camera_angle', "camera2", 'Camera angle.')
 flags.DEFINE_string('datadir', "microwave", 'Directory with dataset files.')
 flags.DEFINE_integer('ep_length', 280, 'Episode length.')
@@ -60,7 +60,7 @@ flags.DEFINE_boolean('tqdm', False, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
 flags.DEFINE_boolean('debug', False, 'Set to debug params (shorter).')
 
-# config_flags.DEFINE_config_file(
+#config_flags.DEFINE_config_file(
 #     'config',
 #     './configs/offline_pixels_config.py:cql',
 #     'File path to the training hyperparameter configuration.',
@@ -95,12 +95,11 @@ def main(_):
 
     wandb.init(project=FLAGS.project,
                dir=os.path.join(save_dir, "wandb"),
-               id=group_name + "-" + name,
-               group=group_name,
+               #id=group_name + "-" + name,
+               #group=group_name,
                save_code=True,
                name=name,
-               resume=None,
-               entity="iris_intel")
+               resume=None)
 
     wandb.config.update(FLAGS)
 

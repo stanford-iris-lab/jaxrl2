@@ -12,10 +12,28 @@ import flax.linen as nn
 from jaxrl5.agents.agent import Agent
 from jaxrl5.agents.drq.augmentations import batched_random_crop
 from jaxrl5.data.dataset import DatasetDict
-from jaxrl2.networks.idql_networks import (MLP, Ensemble, StateActionValue, StateValue, 
+from jaxrl2.networks.jaxrl5_networks import (MLP, Ensemble, StateActionValue, StateValue, 
                                           DDPM, FourierFeatures, cosine_beta_schedule, 
-                                          ddpm_sampler, MLPResNet, get_weight_decay_mask, vp_beta_schedule)
-from jaxrl2.networks.idql_networks.encoders import D4PGEncoder, ResNetV2Encoder
+                                          ddpm_sampler, MLPResNet, get_weight_decay_mask, vp_beta_schedule, PixelMultiplexer)
+from jaxrl2.networks.jaxrl5_networks.encoders import D4PGEncoder, ResNetV2Encoder
+
+def _unpack(batch):
+    # Assuming that if next_observation is missing, it's combined with observation:
+    for pixel_key in batch["observations"].keys():
+        if pixel_key not in batch["next_observations"]:
+            obs_pixels = batch["observations"][pixel_key][..., :-1]
+            next_obs_pixels = batch["observations"][pixel_key][..., 1:]
+
+            obs = batch["observations"].copy(add_or_replace={pixel_key: obs_pixels})
+            next_obs = batch["next_observations"].copy(
+                add_or_replace={pixel_key: next_obs_pixels}
+            )
+
+    batch = batch.copy(
+        add_or_replace={"observations": obs, "next_observations": next_obs}
+    )
+
+    return batch
 
 def mish(x):
     return x * jnp.tanh(nn.softplus(x))
@@ -61,6 +79,7 @@ class PixelDDPMBCLearner(Agent):
         clip_sampler: bool = True,
         ddpm_temperature: float = 1.0,
         actor_tau: float = 0.001,
+        decay_steps: Optional[int] = None,
     ):
         """
         An implementation of the version of Soft-Actor-Critic described in https://arxiv.org/abs/1812.05905
@@ -70,7 +89,7 @@ class PixelDDPMBCLearner(Agent):
         rng, actor_key = jax.random.split(rng, 2)
         actions = action_space.sample()
         observations = observation_space.sample()
-        action_dim = action_space.shape[0]
+        action_dim = actions.shape[0]
 
         preprocess_time_cls = partial(FourierFeatures,
                                       output_size=time_dim,
@@ -81,8 +100,8 @@ class PixelDDPMBCLearner(Agent):
                                 activations=mish,
                                 activate_final=False)
         
-        #if decay_steps is not None:
-            #actor_lr = optax.cosine_decay_schedule(actor_lr, decay_steps)
+        if decay_steps is not None:
+            actor_lr = optax.cosine_decay_schedule(actor_lr, decay_steps)
 
         if actor_architecture == 'mlp':
             base_model_cls = partial(MLP,
@@ -97,7 +116,7 @@ class PixelDDPMBCLearner(Agent):
 
         elif actor_architecture == 'ln_resnet':
 
-            base_model_cls = partial(MLPResNetV3,
+            base_model_cls = partial(MLPResNet,
                                      use_layer_norm=use_layer_norm,
                                      num_blocks=actor_num_blocks,
                                      dropout_rate=dropout_rate,
@@ -111,7 +130,7 @@ class PixelDDPMBCLearner(Agent):
         else:
             raise ValueError(f'Invalid actor architecture: {actor_architecture}')
         
-        time = jnp.zeros((1, 1))
+        time = jnp.zeros((1,))
 
         if encoder == "d4pg":
             encoder_cls = partial(
@@ -131,6 +150,9 @@ class PixelDDPMBCLearner(Agent):
             pixel_keys=pixel_keys,
             depth_keys=depth_keys,
         )
+        #observations = jnp.expand_dims(observations, axis=0)
+        #actions = jnp.expand_dims(actions, axis=0)
+        #import pdb; pdb.set_trace()
         actor_params = actor_cls.init(actor_key, observations, actions, time)["params"]
         actor = TrainState.create(
             apply_fn=actor_cls.apply,
@@ -185,6 +207,9 @@ class PixelDDPMBCLearner(Agent):
     @jax.jit
     def update(self, batch: DatasetDict):
         agent = self
+
+        if "pixels" not in batch["next_observations"]:
+            batch = _unpack(batch)
 
         rng, key = jax.random.split(agent.rng)
         observations = self.data_augmentation_fn(key, batch["observations"])

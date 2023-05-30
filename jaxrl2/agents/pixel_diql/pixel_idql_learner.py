@@ -12,10 +12,10 @@ import flax.linen as nn
 from jaxrl5.agents.agent import Agent
 from jaxrl5.agents.drq.augmentations import batched_random_crop
 from jaxrl5.data.dataset import DatasetDict
-from jaxrl2.networks.idql_networks import (MLP, Ensemble, StateActionValue, StateValue, 
+from jaxrl2.networks.jaxrl5_networks import (MLP, Ensemble, StateActionValue, StateValue, 
                                           DDPM, FourierFeatures, cosine_beta_schedule, 
                                           ddpm_sampler, MLPResNet, get_weight_decay_mask, vp_beta_schedule)
-from jaxrl2.networks.idql_networks.encoders import D4PGEncoder, ResNetV2Encoder
+from jaxrl2.networks.jaxrl5_networks.encoders import D4PGEncoder, ResNetV2Encoder
 
 # Helps to minimize CPU to GPU transfer.
 def _unpack(batch):
@@ -77,7 +77,6 @@ class PixelIDQLLearner(Agent):
         seed: int,
         observation_space: gym.Space,
         action_space: gym.Space,
-        actor_lr: Union[float, optax.Schedule] = 1e-3,
         cnn_features: Sequence[int] = (32, 32, 32, 32),
         cnn_filters: Sequence[int] = (3, 3, 3, 3),
         cnn_strides: Sequence[int] = (2, 1, 1, 1),
@@ -96,7 +95,7 @@ class PixelIDQLLearner(Agent):
         T: int = 20,
         N: int = 64,
         M: int = 0,
-        actor_lr: Union[float, optax.Schedule] = 1e-3,
+        actor_lr: Union[float, optax.Schedule] = 3e-4,
         critic_lr: float = 3e-4,
         value_lr: float = 3e-4,
         clip_sampler: bool = True,
@@ -123,8 +122,8 @@ class PixelIDQLLearner(Agent):
                                 activations=mish,
                                 activate_final=False)
         
-        #if decay_steps is not None:
-            #actor_lr = optax.cosine_decay_schedule(actor_lr, decay_steps)
+        if decay_steps is not None:
+            actor_lr = optax.cosine_decay_schedule(actor_lr, decay_steps)
 
         if actor_architecture == 'mlp':
             base_model_cls = partial(MLP,

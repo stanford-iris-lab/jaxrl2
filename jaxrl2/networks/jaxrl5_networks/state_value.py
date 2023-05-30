@@ -1,7 +1,7 @@
 import flax.linen as nn
 import jax.numpy as jnp
 
-from jaxrl2.networks.idql_networks import default_init
+from jaxrl2.networks.jaxrl5_networks import default_init
 
 
 class StateValue(nn.Module):
