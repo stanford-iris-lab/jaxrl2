@@ -9,13 +9,14 @@ from flax import struct
 from flax.training.train_state import TrainState
 import jax.numpy as jnp
 import flax.linen as nn
-from jaxrl5.agents.agent import Agent
-from jaxrl5.agents.drq.augmentations import batched_random_crop
-from jaxrl5.data.dataset import DatasetDict
+from jaxrl2.agents.drq.augmentations import batched_random_crop
+from jaxrl2.data.dataset import DatasetDict
 from jaxrl2.networks.jaxrl5_networks import (MLP, Ensemble, StateActionValue, StateValue, 
                                           DDPM, FourierFeatures, cosine_beta_schedule, 
                                           ddpm_sampler, MLPResNet, get_weight_decay_mask, vp_beta_schedule, PixelMultiplexer)
 from jaxrl2.networks.jaxrl5_networks.encoders import D4PGEncoder, ResNetV2Encoder
+from jaxrl2.types import Params, PRNGKey
+import numpy as np
 
 def _unpack(batch):
     # Assuming that if next_observation is missing, it's combined with observation:
@@ -37,6 +38,20 @@ def _unpack(batch):
 
 def mish(x):
     return x * jnp.tanh(nn.softplus(x))
+
+class Agent(struct.PyTreeNode):
+    actor: TrainState
+    rng: PRNGKey
+
+    def eval_actions(self, observations: np.ndarray) -> np.ndarray:
+        actions = _eval_actions(self.actor.apply_fn, self.actor.params, observations)
+        return np.asarray(actions), self.replace(rng=self.rng)
+
+    def sample_actions(self, observations: np.ndarray) -> np.ndarray:
+        actions, new_rng = _sample_actions(
+            self.rng, self.actor.apply_fn, self.actor.params, observations
+        )
+        return np.asarray(actions), self.replace(rng=new_rng)
 
 class PixelDDPMBCLearner(Agent):
     score_model: TrainState

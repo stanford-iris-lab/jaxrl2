@@ -9,13 +9,18 @@ from flax import struct
 from flax.training.train_state import TrainState
 import jax.numpy as jnp
 import flax.linen as nn
-from jaxrl5.agents.agent import Agent
-from jaxrl5.agents.drq.augmentations import batched_random_crop
-from jaxrl5.data.dataset import DatasetDict
+from jaxrl2.agents.drq.augmentations import batched_random_crop
+from jaxrl2.data.dataset import DatasetDict
 from jaxrl2.networks.jaxrl5_networks import (MLP, Ensemble, StateActionValue, StateValue, 
                                           DDPM, FourierFeatures, cosine_beta_schedule, PixelMultiplexer,
                                           ddpm_sampler, MLPResNet, get_weight_decay_mask, vp_beta_schedule)
 from jaxrl2.networks.jaxrl5_networks.encoders import D4PGEncoder, ResNetV2Encoder
+from jaxrl2.types import Params, PRNGKey
+import numpy as np
+
+def expectile_loss(diff, expectile=0.8):
+    weight = jnp.where(diff > 0, expectile, (1 - expectile))
+    return weight * (diff**2)
 
 # Helps to minimize CPU to GPU transfer.
 def _unpack(batch):
@@ -36,7 +41,6 @@ def _unpack(batch):
 
     return batch
 
-
 def _share_encoder(source, target):
     replacers = {}
 
@@ -50,6 +54,20 @@ def _share_encoder(source, target):
 
 def mish(x):
     return x * jnp.tanh(nn.softplus(x))
+
+class Agent(struct.PyTreeNode):
+    actor: TrainState
+    rng: PRNGKey
+
+    def eval_actions(self, observations: np.ndarray) -> np.ndarray:
+        actions = _eval_actions(self.actor.apply_fn, self.actor.params, observations)
+        return np.asarray(actions), self.replace(rng=self.rng)
+
+    def sample_actions(self, observations: np.ndarray) -> np.ndarray:
+        actions, new_rng = _sample_actions(
+            self.rng, self.actor.apply_fn, self.actor.params, observations
+        )
+        return np.asarray(actions), self.replace(rng=new_rng)
 
 class PixelIDQLLearner(Agent):
     critic: TrainState
@@ -247,7 +265,7 @@ class PixelIDQLLearner(Agent):
         )
         value_params = value_def.init(value_key, observations)["params"]
         value = TrainState.create(
-            apply_fn=critic_def.apply,
+            apply_fn=value_def.apply,
             params=value_params,
             tx=optax.adam(learning_rate=value_lr),
         )
@@ -328,7 +346,7 @@ class PixelIDQLLearner(Agent):
 
         def value_loss_fn(value_params) -> Tuple[jnp.ndarray, Dict[str, float]]:
             v = agent.value.apply_fn({"params": value_params}, batch["observations"])
-            value_loss = expectile_loss(q - v, agent.critic_hyperparam).mean()
+            value_loss = expectile_loss(q - v, agent.expectile).mean()
 
             return value_loss, {"value_loss": value_loss, "v": v.mean()}
 
@@ -345,7 +363,6 @@ class PixelIDQLLearner(Agent):
         )
 
         target_q = batch["rewards"] + agent.discount * batch["masks"] * next_v
-        batch_size = batch["observations"].shape[0]
 
         def critic_loss_fn(critic_params) -> Tuple[jnp.ndarray, Dict[str, float]]:
             qs = agent.critic.apply_fn(
@@ -476,4 +493,4 @@ class PixelIDQLLearner(Agent):
     
     @jax.jit
     def sample_actions(self, observations: jnp.ndarray):
-        return self.eval_actions(observations)
+        return self.eval_actions(observations) #Just take argmax for online finetuning
