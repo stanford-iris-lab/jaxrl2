@@ -74,7 +74,7 @@ class PixelDDPMBCLearner(Agent):
         seed: int,
         observation_space: gym.Space,
         action_space: gym.Space,
-        actor_lr: Union[float, optax.Schedule] = 1e-3,
+        actor_lr: Union[float, optax.Schedule] = 3e-4,
         cnn_features: Sequence[int] = (32, 32, 32, 32),
         cnn_filters: Sequence[int] = (3, 3, 3, 3),
         cnn_strides: Sequence[int] = (2, 1, 1, 1),

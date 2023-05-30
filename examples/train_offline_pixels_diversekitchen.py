@@ -53,8 +53,10 @@ flags.DEFINE_integer('max_gradient_steps', int(5e5), 'Number of training steps.'
 flags.DEFINE_integer('max_online_gradient_steps', int(5e5), 'Number of training steps.')
 flags.DEFINE_boolean('finetune_online', True, 'Save videos during evaluation.')
 flags.DEFINE_boolean('proprio', False, 'Save videos during evaluation.')
-
-
+flags.DEFINE_float("take_top", None, "Take top N% trajectories.")
+flags.DEFINE_float(
+    "filter_threshold", None, "Take trajectories with returns above the threshold."
+)
 flags.DEFINE_boolean('tqdm', False, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
 flags.DEFINE_boolean('debug', False, 'Set to debug params (shorter).')
@@ -131,6 +133,11 @@ def main(_):
     # replay_buffer_iterator = replay_buffer.get_iterator(sample_args={"batch_size": FLAGS.batch_size, "include_pixels": False})
     # load_data(replay_buffer, FLAGS.datadir, FLAGS.task, FLAGS.ep_length, 3, FLAGS.proprio, debug=FLAGS.debug)
     replay_buffer = env.q_learning_dataset(include_pixels=False, size=FLAGS.replay_buffer_size, debug=FLAGS.debug)
+
+    if FLAGS.take_top is not None or FLAGS.filter_threshold is not None:
+        ds.filter(take_top=FLAGS.take_top, threshold=FLAGS.filter_threshold)
+
+    
     print('Replay buffer loaded')
 
     print('Start offline training')
