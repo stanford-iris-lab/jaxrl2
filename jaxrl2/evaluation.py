@@ -94,7 +94,7 @@ def evaluate_kitchen(agent, env: gym.Env, num_episodes: int, progress_bar=False)
         for key, val in objects_maniplated.items():
             objects_maniplated_queue[key].append(np.sum(val) > 0)
             total += np.sum(val) > 0
-        objects_maniplated_queue["total"] = total
+        objects_maniplated_queue["total"].append(total)
 
     successes = [ep_return > 0 for ep_return in env.return_queue]
     return_info = {

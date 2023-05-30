@@ -240,7 +240,7 @@ def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
         env = wrappers.AdroitHand(task, 128, 128, proprio=proprio, camera_angle=camera_angle)
         # env = wrappers.ActionRepeat(env, action_repeat)
         env = wrappers.NormalizeActions(env)
-        # env = wrappers.TimeLimit(env, ep_length)
+        env = wrappers.TimeLimit(env, ep_length)
         env = FrameStack(env, num_stack=3)
     else:
         raise ValueError(f"Unsupported environment suite: \"{suite}\".")
