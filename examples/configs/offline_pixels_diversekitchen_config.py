@@ -173,6 +173,50 @@ def get_calql_config():
 
     return config
 
+def get_ddpm_bc_config():
+    config = ml_collections.ConfigDict()
+
+    config.actor_lr = 3e-4
+
+    config.encoder = "resnet"
+
+    config.cosine_decay = True
+    config.use_layer_norm = True 
+    config.dropout_rate = 0.1
+
+    config.dropout_rate = config_dict.placeholder(float)
+
+    return config
+
+def get_idql_config():
+    config = ml_collections.ConfigDict()
+
+    config.actor_lr = 3e-4
+    config.critic_lr = 3e-4
+    config.value_lr = 3e-4
+
+    config.hidden_dims = (256, 256)
+
+    #config.cnn_features = (16, 32, 64, 128, 256)
+    #config.cnn_filters = (3, 3, 3, 3, 3)
+    #config.cnn_strides = (2, 2, 2, 2, 2)
+    #config.cnn_padding = "VALID"
+    #config.cnn_groups = 3 ###===### ###---###
+    config.latent_dim = 50
+
+    config.discount = 0.99
+
+    config.expectile = 0.7  # The actual tau for expectiles.
+    config.cosine_decay = True
+
+    config.encoder = "resnet"
+
+    config.tau = 0.005
+    config.use_layer_norm = True 
+    config.dropout_rate = 0.1
+
+    return config
+
 
 def get_config(config_string):
     possible_structures = {
@@ -187,6 +231,12 @@ def get_config(config_string):
         ),
         "calql": ml_collections.ConfigDict(
             {"model_constructor": "PixelCQLLearnerEncoderSepParallel", "model_config": get_calql_config()}
+        ),
+        "ddpm_bc": ml_collections.ConfigDict(
+            {"model_constructor": "PixelDDPMBCLearner", "model_config": get_ddpm_bc_config()}
+        ),
+        "idql": ml_collections.ConfigDict(
+            {"model_constructor": "PixelIDQLLearner", "model_config": get_idql_config()}
         ),
     }
     return possible_structures[config_string]

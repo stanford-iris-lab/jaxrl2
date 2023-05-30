@@ -16,8 +16,7 @@ from jaxrl2.evaluation import evaluate_kitchen
 from jaxrl2.agents.pixel_cql import PixelCQLLearner
 from jaxrl2.agents.pixel_iql import PixelIQLLearner
 from jaxrl2.agents.pixel_bc import PixelBCLearner
-from jaxrl2.agents.pixel_ddpm_bc import PixelDDPMBCLearner
-from jaxrl2.agents.pixel_idql import PixelIDQLLearner
+from jaxrl2.agents import PixelIDQLLearner, PixelDDPMBCLearner
 #from jaxrl2.agents.cql_encodersep_parallel import PixelCQLLearnerEncoderSepParallel
 
 import jaxrl2.wrappers.combo_wrappers as wrappers

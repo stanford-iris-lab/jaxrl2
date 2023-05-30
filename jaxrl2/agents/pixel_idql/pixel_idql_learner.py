@@ -13,7 +13,7 @@ from jaxrl5.agents.agent import Agent
 from jaxrl5.agents.drq.augmentations import batched_random_crop
 from jaxrl5.data.dataset import DatasetDict
 from jaxrl2.networks.jaxrl5_networks import (MLP, Ensemble, StateActionValue, StateValue, 
-                                          DDPM, FourierFeatures, cosine_beta_schedule, 
+                                          DDPM, FourierFeatures, cosine_beta_schedule, PixelMultiplexer,
                                           ddpm_sampler, MLPResNet, get_weight_decay_mask, vp_beta_schedule)
 from jaxrl2.networks.jaxrl5_networks.encoders import D4PGEncoder, ResNetV2Encoder
 
@@ -69,7 +69,8 @@ class PixelIDQLLearner(Agent):
     alpha_hats: jnp.ndarray
     actor_tau: float = struct.field(pytree_node=False)
     tau: float
-    critic_hyperparam: float
+    discount: float
+    expectile: float
 
     @classmethod
     def create(
@@ -102,6 +103,9 @@ class PixelIDQLLearner(Agent):
         ddpm_temperature: float = 1.0,
         actor_tau: float = 0.001,
         tau: float = 0.005,
+        discount: float = 0.99,
+        expectile: float = 0.7,
+        decay_steps: Optional[int] = None,
     ):
         """
         An implementation of the version of Soft-Actor-Critic described in https://arxiv.org/abs/1812.05905
@@ -138,7 +142,7 @@ class PixelIDQLLearner(Agent):
 
         elif actor_architecture == 'ln_resnet':
 
-            base_model_cls = partial(MLPResNetV3,
+            base_model_cls = partial(MLPResNet,
                                      use_layer_norm=use_layer_norm,
                                      num_blocks=actor_num_blocks,
                                      dropout_rate=dropout_rate,
@@ -152,7 +156,7 @@ class PixelIDQLLearner(Agent):
         else:
             raise ValueError(f'Invalid actor architecture: {actor_architecture}')
         
-        time = jnp.zeros((1, 1))
+        time = jnp.zeros((1, ))
 
         if encoder == "d4pg":
             encoder_cls = partial(
@@ -209,8 +213,6 @@ class PixelIDQLLearner(Agent):
             MLP,
             hidden_dims=hidden_dims,
             activate_final=True,
-            dropout_rate=critic_dropout_rate,
-            use_layer_norm=critic_layer_norm,
         )
         critic_cls = partial(StateActionValue, base_cls=critic_base_cls)
         critic_cls = partial(Ensemble, net_cls=critic_cls, num=num_qs)
@@ -269,6 +271,7 @@ class PixelIDQLLearner(Agent):
             ddpm_temperature=ddpm_temperature,
             actor_tau=actor_tau,
             tau=tau,
+            expectile=expectile,
         )
     
     def update_actor(agent, batch: DatasetDict):
@@ -416,7 +419,7 @@ class PixelIDQLLearner(Agent):
         return agent, info
     
     @jax.jit
-    def update_online(self, batch: DatasetDict)
+    def update_online(self, batch: DatasetDict):
         #Don't update actor during online finetuning
         agent = self
 
