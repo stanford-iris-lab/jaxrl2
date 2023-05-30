@@ -45,7 +45,12 @@ def evaluate_adroit(agent, env: gym.Env, num_episodes: int, progress_bar=False) 
     ###---###
         observation, done = env.reset(), False
         while not done:
-            action = agent.eval_actions(observation)
+            # action = agent.eval_actions(observation)
+            out = agent.eval_actions(observation)
+            if isinstance(out, tuple):
+                action, agent = out
+            else:
+                action = out
             observation, _, done, _ = env.step(action)
 
     successes = (np.array(env.return_queue) > 0).astype(np.float32)
@@ -81,7 +86,12 @@ def evaluate_kitchen(agent, env: gym.Env, num_episodes: int, progress_bar=False)
 
         observation, done = env.reset(), False
         while not done:
-            action = agent.eval_actions(observation)
+            # action = agent.eval_actions(observation)
+            out = agent.eval_actions(observation)
+            if isinstance(out, tuple):
+                action, agent = out
+            else:
+                action = out
             env_step = env.step(action)
             if len(env_step) == 4:
                 observation, _, done, info = env_step

@@ -181,7 +181,7 @@ def get_ddpm_bc_config():
     config.encoder = "resnet"
 
     config.cosine_decay = True
-    config.use_layer_norm = True 
+    config.use_layer_norm = True
     config.dropout_rate = 0.1
 
     config.dropout_rate = config_dict.placeholder(float)
@@ -212,7 +212,7 @@ def get_idql_config():
     config.encoder = "resnet"
 
     config.tau = 0.005
-    config.use_layer_norm = True 
+    config.use_layer_norm = True
     config.dropout_rate = 0.1
 
     return config

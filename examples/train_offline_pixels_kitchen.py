@@ -97,11 +97,12 @@ def main(_):
 
     wandb.init(project=FLAGS.project,
                dir=os.path.join(save_dir, "wandb"),
-               #id=group_name + "-" + name,
-               #group=group_name,
+               id=group_name + "-" + name,
+               group=group_name,
                save_code=True,
                name=name,
-               resume=None)
+               resume=None,
+               entity="iris_intel")
 
     wandb.config.update(FLAGS)
 
