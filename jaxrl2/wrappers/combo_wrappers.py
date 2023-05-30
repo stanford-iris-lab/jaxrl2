@@ -425,7 +425,9 @@ CAMERAS = {
     9: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=90,
             elevation=-50),  # move back so less of cabinets
     10: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=90, elevation=-35),
-    11: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=90, elevation=-10)
+    11: dict(distance=2.2, lookat=[-0.2, 0.5, 2.0], azimuth=90, elevation=-10),
+
+    12: dict(distance=1.86, lookat=[-0.3, .5, 2.], azimuth=90, elevation=-60) # LEXA view
 }
 
 class Kitchen:
@@ -568,8 +570,8 @@ class KitchenMultipleViews(Kitchen):
         # img = self.render(mode='rgb_array', size=(self._img_h, self._img_w))
         imgs = self.render_extra_views("rgb")
         # keys = sorted(list(imgs.keys()))
-        keys = ['camera_0_rgb', 'camera_1_rgb', 'camera_gripper_rgb']
-        img = np.concatenate([imgs[key] for key in keys], axis=2)
+        # img = np.concatenate([imgs[key] for key in keys], axis=2)
+        img = np.concatenate([imgs[key] for key in sorted(list(imgs.keys()))], axis=-1)
         obs_dict = dict(pixels=img)
 
         if self._proprio:
@@ -583,8 +585,7 @@ class KitchenMultipleViews(Kitchen):
         # img = self.render(mode='rgb_array', size=(self._img_h, self._img_w))
         imgs = self.render_extra_views("rgb")
         # keys = sorted(list(imgs.keys()))
-        keys = ['camera_0_rgb', 'camera_1_rgb', 'camera_gripper_rgb']
-        img = np.concatenate([imgs[key] for key in keys], axis=2)
+        img = np.concatenate([imgs[key] for key in sorted(list(imgs.keys()))], axis=-1)
         obs_dict = dict(pixels=img)
 
         if self._proprio:

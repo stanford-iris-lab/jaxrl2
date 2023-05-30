@@ -73,7 +73,7 @@ def main(_):
 
     config_flags.DEFINE_config_file(
         'config',
-        f'./configs/offline_pixels_config.py:{FLAGS.algorithm}',
+        f'./configs/offline_pixels_diversekitchen_config.py:{FLAGS.algorithm}',
         'File path to the training hyperparameter configuration.',
         lock_config=False)
 
@@ -81,7 +81,7 @@ def main(_):
         FLAGS.project = "trash_results"
         # FLAGS.batch_size = 16
         FLAGS.max_gradient_steps = 500
-        FLAGS.eval_interval = 400
+        FLAGS.eval_interval = 200
         FLAGS.eval_episodes = 2
         FLAGS.log_interval = 200
 

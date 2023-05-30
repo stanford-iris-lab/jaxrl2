@@ -73,7 +73,7 @@ def main(_):
 
     config_flags.DEFINE_config_file(
         'config',
-        f'./configs/offline_pixels_config.py:{FLAGS.algorithm}',
+        f'./configs/offline_pixels_standardkitchen_config.py:{FLAGS.algorithm}',
         'File path to the training hyperparameter configuration.',
         lock_config=False)
 
@@ -81,9 +81,11 @@ def main(_):
         FLAGS.project = "trash_results"
         # FLAGS.batch_size = 16
         FLAGS.max_gradient_steps = 500
-        FLAGS.eval_interval = 400
+        # FLAGS.eval_interval = 400
+        FLAGS.eval_interval = 1000
         FLAGS.eval_episodes = 2
-        FLAGS.log_interval = 200
+        # FLAGS.log_interval = 200
+        FLAGS.log_interval = 1000
 
         if FLAGS.max_online_gradient_steps > 0:
             FLAGS.max_online_gradient_steps = 500
@@ -115,16 +117,17 @@ def main(_):
 
     # assert kwargs["cnn_groups"] == 1
     print(globals()[FLAGS.config.model_constructor])
-    agent = globals()[FLAGS.config.model_constructor](
-        FLAGS.seed, env.observation_space.sample(), env.action_space.sample(),
-        **kwargs)
+    obs = env.observation_space.sample()
+    obs["pixels"] = obs["pixels"][None]
+    obs["states"] = obs["states"][None]
+    agent = globals()[FLAGS.config.model_constructor](FLAGS.seed, obs, env.action_space.sample()[None], **kwargs)
     print('Agent created')
 
     print("Loading replay buffer")
     replay_buffer = MemoryEfficientReplayBuffer(env.observation_space, env.action_space, FLAGS.replay_buffer_size)
     replay_buffer.seed(FLAGS.seed)
     replay_buffer_iterator = replay_buffer.get_iterator(sample_args={"batch_size": FLAGS.batch_size, "include_pixels": False})
-    load_data(replay_buffer, FLAGS.datadir, FLAGS.task, FLAGS.ep_length, 3, FLAGS.proprio, debug=FLAGS.debug)
+    load_data(replay_buffer, env, FLAGS.datadir, FLAGS.task, FLAGS.ep_length, 3, FLAGS.proprio, debug=FLAGS.debug)
     print('Replay buffer loaded')
 
     print('Start offline training')
@@ -265,7 +268,8 @@ def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
         # assert proprio
         assert action_repeat == 1
         # tasks_list = task.split("+")
-        env = wrappers.KitchenMultipleViews(task=tasks_list, size=(128, 128), camera_ids=[0, 1], proprio=proprio, log_only_target_tasks=True)
+        # env = wrappers.KitchenMultipleViews(task=tasks_list, size=(128, 128), camera_ids=[0, 1], proprio=proprio, log_only_target_tasks=True)
+        env = wrappers.KitchenMultipleViews(task=tasks_list, size=(64, 64), camera_ids=[12], proprio=proprio, log_only_target_tasks=True)
         env = wrappers.ActionRepeat(env, action_repeat)
         env = wrappers.NormalizeActions(env)
         env = wrappers.TimeLimit(env, ep_length)
@@ -274,7 +278,7 @@ def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
         raise ValueError(f"Unsupported environment suite: \"{suite}\".")
     return env
 
-def load_episode(episode_file, suite, tasks_list):
+def load_episode(env, episode_file, suite, tasks_list):
     with open(episode_file, 'rb') as f:
         episode = np.load(f, allow_pickle=True)
 
@@ -295,13 +299,20 @@ def load_episode(episode_file, suite, tasks_list):
     # extra_image_camera_gripper_rgb
 
         if "standardkitchen" in suite:
-            keys = ["extra_image_camera_0_rgb", "extra_image_camera_1_rgb", "extra_image_camera_gripper_rgb"]
-            img = np.concatenate([episode[key] for key in keys], axis=-1)
+            # keys = ["extra_image_camera_0_rgb", "extra_image_camera_1_rgb", "extra_image_camera_gripper_rgb"]
+            imgs = {}
+            for camera_id, camera in env.cameras.items():
+                # imgs[camera_id + "_rgb"] = episode[camera_id + "_rgb"]
+                imgs[camera_id + "_rgb"] = episode[f"extra_image_{camera_id}_rgb"]
+
+
+
+            img = np.concatenate([imgs[key] for key in sorted(list(imgs.keys()))], axis=-1)
             episode["image"] = img
 
     return episode
 
-def load_data(replay_buffer, offline_dataset_path, task, ep_length, num_stack, proprio, debug=False):
+def load_data(replay_buffer, env, offline_dataset_path, task, ep_length, num_stack, proprio, debug=False):
     suite, task = task.split('_', 1)
     tasks_list = get_task_list(task)
 
@@ -309,7 +320,7 @@ def load_data(replay_buffer, offline_dataset_path, task, ep_length, num_stack, p
     total_transitions = 0
 
     for episode_file in tqdm.tqdm(episode_files, total=len(episode_files), desc="Loading offline data"):
-        episode = load_episode(episode_file, suite, tasks_list)
+        episode = load_episode(env, episode_file, suite, tasks_list)
 
         # observation, done = env.reset(), False
         frames = collections.deque(maxlen=num_stack)
