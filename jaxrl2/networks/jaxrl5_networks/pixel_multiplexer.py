@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 from flax.core.frozen_dict import FrozenDict
 
-from jaxrl2.networks.idql_networks import default_init
+from jaxrl2.networks.jaxrl5_networks import default_init
 
 
 class PixelMultiplexer(nn.Module):
@@ -21,6 +21,7 @@ class PixelMultiplexer(nn.Module):
         self,
         observations: Union[FrozenDict, Dict],
         actions: Optional[jnp.ndarray] = None,
+        time: Optional[jnp.ndarray] = None,
         training: bool = False,
     ) -> jnp.ndarray:
         observations = FrozenDict(observations)
@@ -62,5 +63,7 @@ class PixelMultiplexer(nn.Module):
 
         if actions is None:
             return self.network_cls()(x, training)
-        else:
+        elif time is None:
             return self.network_cls()(x, actions, training)
+        else:
+            return self.network_cls()(x, actions, time, training)

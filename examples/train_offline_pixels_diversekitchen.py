@@ -16,7 +16,8 @@ from jaxrl2.evaluation import evaluate_kitchen
 from jaxrl2.agents.pixel_cql import PixelCQLLearner
 from jaxrl2.agents.pixel_iql import PixelIQLLearner
 from jaxrl2.agents.pixel_bc import PixelBCLearner
-# from jaxrl2.agents.cql_encodersep_parallel import PixelCQLLearnerEncoderSepParallel
+from jaxrl2.agents import PixelIDQLLearner, PixelDDPMBCLearner
+#from jaxrl2.agents.cql_encodersep_parallel import PixelCQLLearnerEncoderSepParallel
 
 import jaxrl2.wrappers.combo_wrappers as wrappers
 from jaxrl2.wrappers.frame_stack import FrameStack
@@ -93,12 +94,12 @@ def main(_):
 
     wandb.init(project=FLAGS.project,
                dir=os.path.join(save_dir, "wandb"),
-               id=group_name + "-" + name,
-               group=group_name,
+               #id=group_name + "-" + name,
+               #group=group_name,
                save_code=True,
-               name=name,
-               resume=None,
-               entity="iris_intel")
+               name=name,)
+               #resume=None,
+               #entity="iris_intel")
 
     wandb.config.update(FLAGS)
 
@@ -114,9 +115,14 @@ def main(_):
 
     # assert kwargs["cnn_groups"] == 1
     print(globals()[FLAGS.config.model_constructor])
-    agent = globals()[FLAGS.config.model_constructor](
-        FLAGS.seed, env.observation_space.sample(), env.action_space.sample(),
+    if FLAGS.algorithm in ('idql', 'ddpm_bc'):
+        agent = globals()[FLAGS.config.model_constructor].create(
+        FLAGS.seed, env.observation_space, env.action_space,
         **kwargs)
+    else:
+        agent = globals()[FLAGS.config.model_constructor](
+            FLAGS.seed, env.observation_space.sample(), env.action_space.sample(),
+            **kwargs)
     print('Agent created')
 
     print("Loading replay buffer")
@@ -133,7 +139,12 @@ def main(_):
         tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}]  (offline)")
         # batch = next(replay_buffer_iterator)
         batch = replay_buffer.sample(FLAGS.batch_size)
-        update_info = agent.update(batch)
+        out = agent.update(batch)
+
+        if isinstance(out, tuple):
+            agent, update_info = out
+        else:
+            update_info = out
 
         if i % FLAGS.log_interval == 0:
             for k, v in update_info.items():
@@ -162,7 +173,11 @@ def main(_):
         for i in tbar:
             tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed} (online)]")
 
-            action = agent.sample_actions(observation)
+            out = agent.sample_actions(observation)
+            if isinstance(out, tuple):
+                action, agent = out
+            else:
+                action = out
 
             env_step = env.step(action)
             if len(env_step) == 4:
@@ -197,7 +212,15 @@ def main(_):
                 observation, done = env.reset(), False
 
             batch = replay_buffer.sample(FLAGS.batch_size, reinsert_offline=False)
-            update_info = agent.update(batch)
+            if FLAGS.algorithm == "idql":
+                out = agent.update_online(batch)
+            else:
+                out = agent.update(batch)
+
+            if isinstance(out, tuple):
+                agent, update_info = out
+            else:
+                update_info = out
 
             if i % FLAGS.log_interval == 0:
                 for k, v in update_info.items():

@@ -59,7 +59,7 @@ class DDPM(nn.Module):
                  a: jnp.ndarray,
                  time: jnp.ndarray,
                  training: bool = False):
-
+        
         t_ff = self.time_preprocess_cls()(time)
         cond = self.cond_encoder_cls()(t_ff, training=training)
         reverse_input = jnp.concatenate([a, s, cond], axis=-1)

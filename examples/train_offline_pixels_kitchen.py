@@ -16,7 +16,9 @@ from jaxrl2.evaluation import evaluate_kitchen
 from jaxrl2.agents.pixel_cql import PixelCQLLearner
 from jaxrl2.agents.pixel_iql import PixelIQLLearner
 from jaxrl2.agents.pixel_bc import PixelBCLearner
-# from jaxrl2.agents.cql_encodersep_parallel import PixelCQLLearnerEncoderSepParallel
+from jaxrl2.agents.pixel_ddpm_bc import PixelDDPMBCLearner
+
+#from jaxrl2.agents.cql_encodersep_parallel import PixelCQLLearnerEncoderSepParallel
 
 import jaxrl2.wrappers.combo_wrappers as wrappers
 from jaxrl2.wrappers.frame_stack import FrameStack
@@ -36,7 +38,7 @@ flags.DEFINE_string('save_dir', './results', 'Tensorboard logging dir.')
 flags.DEFINE_string('project', "vd5rl", 'WandB project.')
 flags.DEFINE_string('algorithm', "cql", 'Which offline RL algorithm to use.')
 flags.DEFINE_string('description', "default", 'WandB project.')
-flags.DEFINE_string('task', "microwave", 'Task for the kitchen env.')
+flags.DEFINE_string('task', "diversekitchen_indistribution-expert_demos", 'Task for the kitchen env.')
 flags.DEFINE_string('camera_angle', "camera2", 'Camera angle.')
 flags.DEFINE_string('datadir', "microwave", 'Directory with dataset files.')
 flags.DEFINE_integer('ep_length', 280, 'Episode length.')
@@ -58,7 +60,7 @@ flags.DEFINE_boolean('tqdm', False, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
 flags.DEFINE_boolean('debug', False, 'Set to debug params (shorter).')
 
-# config_flags.DEFINE_config_file(
+#config_flags.DEFINE_config_file(
 #     'config',
 #     './configs/offline_pixels_config.py:cql',
 #     'File path to the training hyperparameter configuration.',
@@ -95,12 +97,11 @@ def main(_):
 
     wandb.init(project=FLAGS.project,
                dir=os.path.join(save_dir, "wandb"),
-               id=group_name + "-" + name,
-               group=group_name,
+               #id=group_name + "-" + name,
+               #group=group_name,
                save_code=True,
                name=name,
-               resume=None,
-               entity="iris_intel")
+               resume=None)
 
     wandb.config.update(FLAGS)
 
@@ -134,7 +135,12 @@ def main(_):
     for i in tbar:
         tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}] (offline)")
         batch = next(replay_buffer_iterator)
-        update_info = agent.update(batch)
+        out = agent.update(batch)
+
+        if isinstance(out, tuple):
+            agent, update_info = out
+        else:
+            update_info = out
 
         if i % FLAGS.log_interval == 0:
             for k, v in update_info.items():
@@ -163,7 +169,11 @@ def main(_):
         for i in tbar:
             tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed} (online)]")
 
-            action = agent.sample_actions(observation)
+            out = agent.sample_actions(observation)
+            if isinstance(out, tuple):
+                action, agent = out
+            else:
+                action = out
 
             env_step = env.step(action)
             if len(env_step) == 4:
@@ -197,7 +207,12 @@ def main(_):
                 observation, done = env.reset(), False
 
             batch = next(replay_buffer_iterator)
-            update_info = agent.update(batch)
+            out = agent.update(batch)
+
+            if isinstance(out, tuple):
+                agent, update_info = out
+            else:
+                update_info = out
 
             if i % FLAGS.log_interval == 0:
                 for k, v in update_info.items():
