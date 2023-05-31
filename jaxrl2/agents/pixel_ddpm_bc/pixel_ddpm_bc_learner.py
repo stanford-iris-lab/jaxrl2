@@ -11,12 +11,14 @@ import jax.numpy as jnp
 import flax.linen as nn
 from jaxrl2.agents.drq.augmentations import batched_random_crop
 from jaxrl2.data.dataset import DatasetDict
-from jaxrl2.networks.jaxrl5_networks import (MLP, Ensemble, StateActionValue, StateValue, 
-                                          DDPM, FourierFeatures, cosine_beta_schedule, 
+from jaxrl2.networks.jaxrl5_networks import (MLP, Ensemble, StateActionValue, StateValue,
+                                          DDPM, FourierFeatures, cosine_beta_schedule,
                                           ddpm_sampler, MLPResNet, get_weight_decay_mask, vp_beta_schedule, PixelMultiplexer)
 from jaxrl2.networks.jaxrl5_networks.encoders import D4PGEncoder, ResNetV2Encoder
 from jaxrl2.types import Params, PRNGKey
 import numpy as np
+
+from jaxrl2.networks.encoders import ImpalaEncoder
 
 def _unpack(batch):
     # Assuming that if next_observation is missing, it's combined with observation:
@@ -95,6 +97,7 @@ class PixelDDPMBCLearner(Agent):
         ddpm_temperature: float = 1.0,
         actor_tau: float = 0.001,
         decay_steps: Optional[int] = None,
+        use_multiplicative_cond=False,
     ):
         """
         An implementation of the version of Soft-Actor-Critic described in https://arxiv.org/abs/1812.05905
@@ -114,7 +117,7 @@ class PixelDDPMBCLearner(Agent):
                                 hidden_dims=(2*time_dim, time_dim),
                                 activations=mish,
                                 activate_final=False)
-        
+
         if decay_steps is not None:
             actor_lr = optax.cosine_decay_schedule(actor_lr, decay_steps)
 
@@ -124,7 +127,7 @@ class PixelDDPMBCLearner(Agent):
                                     activations=mish,
                                     use_layer_norm=use_layer_norm,
                                     activate_final=False)
-            
+
             actor_cls = partial(DDPM, time_preprocess_cls=preprocess_time_cls,
                              cond_encoder_cls=cond_model_cls,
                              reverse_encoder_cls=base_model_cls)
@@ -137,14 +140,14 @@ class PixelDDPMBCLearner(Agent):
                                      dropout_rate=dropout_rate,
                                      out_dim=action_dim,
                                      activations=mish)
-            
+
             actor_cls = partial(DDPM, time_preprocess_cls=preprocess_time_cls,
                              cond_encoder_cls=cond_model_cls,
                              reverse_encoder_cls=base_model_cls)
 
         else:
             raise ValueError(f'Invalid actor architecture: {actor_architecture}')
-        
+
         time = jnp.zeros((1,))
 
         if encoder == "d4pg":
@@ -155,8 +158,13 @@ class PixelDDPMBCLearner(Agent):
                 strides=cnn_strides,
                 padding=cnn_padding,
             )
+        elif encoder == "impala":
+            # encoder_cls = ImpalaEncoder(use_multiplicative_cond=use_multiplicative_cond)
+            encoder_cls = partial(ImpalaEncoder, use_multiplicative_cond=use_multiplicative_cond)
         elif encoder == "resnet":
             encoder_cls = partial(ResNetV2Encoder, stage_sizes=(2, 2, 2, 2))
+        else:
+            raise ValueError(f"Unsupported encoder: {encoder}")
 
         actor_cls = PixelMultiplexer(
             encoder_cls=encoder_cls,
@@ -188,7 +196,7 @@ class PixelDDPMBCLearner(Agent):
                 if depth_key is not None:
                     observations = batched_random_crop(key, observations, depth_key)
             return observations
-        
+
         if beta_schedule == 'cosine':
             betas = jnp.array(cosine_beta_schedule(T))
         elif beta_schedule == 'linear':
@@ -236,7 +244,7 @@ class PixelDDPMBCLearner(Agent):
         key, rng = jax.random.split(rng, 2)
         noise_sample = jax.random.normal(
             key, (batch['actions'].shape[0], agent.act_dim))
-        
+
         alpha_hats = agent.alpha_hats[time]
         time = jnp.expand_dims(time, axis=1)
         alpha_1 = jnp.expand_dims(jnp.sqrt(alpha_hats), axis=1)
@@ -251,7 +259,7 @@ class PixelDDPMBCLearner(Agent):
                                        time,
                                        rngs={'dropout': key},
                                        training=True)
-            
+
             actor_loss = (((eps_pred - noise_sample) ** 2).sum(axis = -1)).mean()
 
             return actor_loss, {'actor_loss': actor_loss}
@@ -270,7 +278,7 @@ class PixelDDPMBCLearner(Agent):
         new_agent = agent.replace(score_model=score_model, target_score_model=target_score_model, rng=rng)
 
         return new_agent, info
-    
+
     @jax.jit
     def eval_actions(self, observations: jnp.ndarray):
         rng = self.rng

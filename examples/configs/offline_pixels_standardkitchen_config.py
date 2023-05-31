@@ -22,7 +22,7 @@ def get_bc_config():
     # config.use_multiplicative_cond = False
     # config.use_spatial_learned_embeddings = True
 
-    config.cnn_groups = 2
+    config.cnn_groups = 1
     config.latent_dim = 50
     config.hidden_dims = (256, 256)
 
@@ -53,7 +53,7 @@ def get_iql_config():
     # config.use_multiplicative_cond = False
     # config.use_spatial_learned_embeddings = True
 
-    config.cnn_groups = 2
+    config.cnn_groups = 1
     config.latent_dim = 50
     config.hidden_dims = (256, 256)
 
@@ -95,7 +95,7 @@ def get_cql_config():
     # config.use_multiplicative_cond = False
     # config.use_spatial_learned_embeddings = True
 
-    config.cnn_groups = 2
+    config.cnn_groups = 1
     config.latent_dim = 50
     config.hidden_dims = (256, 256)
 
@@ -145,7 +145,7 @@ def get_calql_config():
     # config.use_multiplicative_cond = False
     # config.use_spatial_learned_embeddings = True
 
-    config.cnn_groups = 2
+    config.cnn_groups = 1
     config.latent_dim = 50
     config.hidden_dims = (256, 256)
 

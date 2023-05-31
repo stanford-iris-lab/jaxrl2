@@ -9,7 +9,8 @@ import flax.linen as nn
 import jax.numpy as jnp
 from flax import linen as nn
 
-from jaxrl5.networks import default_init
+# from jaxrl5.networks import default_init
+from jaxrl2.networks.jaxrl5_networks import default_init
 
 
 class ResNetV2Block(nn.Module):

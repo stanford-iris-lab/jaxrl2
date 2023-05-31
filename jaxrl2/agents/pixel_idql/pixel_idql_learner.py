@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import flax.linen as nn
 from jaxrl2.agents.drq.augmentations import batched_random_crop
 from jaxrl2.data.dataset import DatasetDict
-from jaxrl2.networks.jaxrl5_networks import (MLP, Ensemble, StateActionValue, StateValue, 
+from jaxrl2.networks.jaxrl5_networks import (MLP, Ensemble, StateActionValue, StateValue,
                                           DDPM, FourierFeatures, cosine_beta_schedule, PixelMultiplexer,
                                           ddpm_sampler, MLPResNet, get_weight_decay_mask, vp_beta_schedule)
 from jaxrl2.networks.jaxrl5_networks.encoders import D4PGEncoder, ResNetV2Encoder
@@ -144,7 +144,7 @@ class PixelIDQLLearner(Agent):
                                 hidden_dims=(2*time_dim, time_dim),
                                 activations=mish,
                                 activate_final=False)
-        
+
         if decay_steps is not None:
             actor_lr = optax.cosine_decay_schedule(actor_lr, decay_steps)
 
@@ -154,7 +154,7 @@ class PixelIDQLLearner(Agent):
                                     activations=mish,
                                     use_layer_norm=use_layer_norm,
                                     activate_final=False)
-            
+
             actor_cls = partial(DDPM, time_preprocess_cls=preprocess_time_cls,
                              cond_encoder_cls=cond_model_cls,
                              reverse_encoder_cls=base_model_cls)
@@ -167,14 +167,14 @@ class PixelIDQLLearner(Agent):
                                      dropout_rate=dropout_rate,
                                      out_dim=action_dim,
                                      activations=mish)
-            
+
             actor_cls = partial(DDPM, time_preprocess_cls=preprocess_time_cls,
                              cond_encoder_cls=cond_model_cls,
                              reverse_encoder_cls=base_model_cls)
 
         else:
             raise ValueError(f'Invalid actor architecture: {actor_architecture}')
-        
+
         time = jnp.zeros((1, ))
 
         if encoder == "d4pg":
@@ -215,7 +215,7 @@ class PixelIDQLLearner(Agent):
                 if depth_key is not None:
                     observations = batched_random_crop(key, observations, depth_key)
             return observations
-        
+
         if beta_schedule == 'cosine':
             betas = jnp.array(cosine_beta_schedule(T))
         elif beta_schedule == 'linear':
@@ -293,7 +293,7 @@ class PixelIDQLLearner(Agent):
             discount=discount,
             expectile=expectile,
         )
-    
+
     def update_actor(agent, batch: DatasetDict):
         rng = agent.rng
         key, rng = jax.random.split(rng, 2)
@@ -301,7 +301,7 @@ class PixelIDQLLearner(Agent):
         key, rng = jax.random.split(rng, 2)
         noise_sample = jax.random.normal(
             key, (batch['actions'].shape[0], agent.act_dim))
-        
+
         alpha_hats = agent.alpha_hats[time]
         time = jnp.expand_dims(time, axis=1)
         alpha_1 = jnp.expand_dims(jnp.sqrt(alpha_hats), axis=1)
@@ -316,7 +316,7 @@ class PixelIDQLLearner(Agent):
                                        time,
                                        rngs={'dropout': key},
                                        training=True)
-            
+
             actor_loss = (((eps_pred - noise_sample) ** 2).sum(axis = -1)).mean()
 
             return actor_loss, {'actor_loss': actor_loss}
@@ -335,7 +335,7 @@ class PixelIDQLLearner(Agent):
         new_agent = agent.replace(score_model=score_model, target_score_model=target_score_model, rng=rng)
 
         return new_agent, info
-    
+
     def update_v(agent, batch: DatasetDict) -> Tuple[Agent, Dict[str, float]]:
         qs = agent.target_critic.apply_fn(
             {"params": agent.target_critic.params},
@@ -356,7 +356,7 @@ class PixelIDQLLearner(Agent):
         agent = agent.replace(value=value)
 
         return agent, info
-    
+
     def update_q(agent, batch: DatasetDict) -> Tuple[Agent, Dict[str, float]]:
         next_v = agent.value.apply_fn(
             {"params": agent.value.params}, batch["next_observations"]
@@ -394,7 +394,7 @@ class PixelIDQLLearner(Agent):
 
         if "pixels" not in batch["next_observations"]:
             batch = _unpack(batch)
-        
+
         value = _share_encoder(source=agent.critic, target=agent.value)
         agent = agent.replace(value=value)
 
@@ -415,10 +415,10 @@ class PixelIDQLLearner(Agent):
 
         def first_half(x):
             return x[:batch_size//2]
-        
+
         def second_half(x):
             return x[batch_size//2:]
-        
+
         first_batch = jax.tree_util.tree_map(first_half, batch)
         second_batch = jax.tree_util.tree_map(second_half, batch)
 
@@ -429,7 +429,7 @@ class PixelIDQLLearner(Agent):
 
         def slice(x):
             return x[:critic_batch_size]
-        
+
         mini_batch = jax.tree_util.tree_map(slice, batch)
 
         agent, v_info = agent.update_v(mini_batch)
@@ -438,7 +438,7 @@ class PixelIDQLLearner(Agent):
         info = {**actor_info, **v_info, **q_info}
 
         return agent, info
-    
+
     @jax.jit
     def update_online(self, batch: DatasetDict):
         #Don't update actor during online finetuning
@@ -446,7 +446,7 @@ class PixelIDQLLearner(Agent):
 
         if "pixels" not in batch["next_observations"]:
             batch = _unpack(batch)
-        
+
         value = _share_encoder(source=agent.critic, target=agent.value)
         new_agent = agent.replace(value=value)
 
@@ -463,7 +463,7 @@ class PixelIDQLLearner(Agent):
 
         def slice(x):
             return x[:256]
-        
+
         batch = jax.tree_util.tree_map(slice, batch)
 
         agent, v_info = agent.update_v(batch)
@@ -472,7 +472,7 @@ class PixelIDQLLearner(Agent):
         info = {**v_info, **q_info}
 
         return agent, info
-        
+
     @jax.jit
     def eval_actions(self, observations: jnp.ndarray):
         rng = self.rng
@@ -490,7 +490,7 @@ class PixelIDQLLearner(Agent):
         new_rng = rng
 
         return action.squeeze(), self.replace(rng=new_rng)
-    
+
     @jax.jit
     def sample_actions(self, observations: jnp.ndarray):
         return self.eval_actions(observations) #Just take argmax for online finetuning

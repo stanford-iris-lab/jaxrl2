@@ -48,6 +48,7 @@ flags.DEFINE_integer('eval_episodes', 250,
                      'Number of episodes used for evaluation.')
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 5000, 'Eval interval.')
+flags.DEFINE_integer('online_eval_interval', 5000, 'Eval interval.')
 flags.DEFINE_integer('batch_size', 256, 'Mini batch size.')
 flags.DEFINE_integer('max_gradient_steps', int(5e5), 'Number of training steps.')
 flags.DEFINE_integer('max_online_gradient_steps', int(5e5), 'Number of training steps.')
@@ -82,7 +83,8 @@ def main(_):
         FLAGS.project = "trash_results"
         # FLAGS.batch_size = 16
         FLAGS.max_gradient_steps = 500
-        FLAGS.eval_interval = 200
+        FLAGS.eval_interval = 300
+        FLAGS.online_eval_interval = 300
         FLAGS.eval_episodes = 2
         FLAGS.log_interval = 200
 
@@ -94,14 +96,15 @@ def main(_):
     group_name = f"{FLAGS.task}_{FLAGS.algorithm}_{FLAGS.description}"
     name = f"seed_{FLAGS.seed}"
 
+
     wandb.init(project=FLAGS.project,
-               dir=os.path.join(save_dir, "wandb"),
-               id=group_name + "-" + name,
-               group=group_name,
-               save_code=True,
-               name=name,
-               resume=None,
-               entity="iris_intel")
+              dir=os.path.join(save_dir, "wandb"),
+              id=group_name + "-" + name,
+              group=group_name,
+              save_code=True,
+              name=name,
+              resume=None,
+              entity="iris_intel")
 
     wandb.config.update(FLAGS)
 
@@ -137,7 +140,7 @@ def main(_):
     if FLAGS.take_top is not None or FLAGS.filter_threshold is not None:
         ds.filter(take_top=FLAGS.take_top, threshold=FLAGS.filter_threshold)
 
-    
+
     print('Replay buffer loaded')
 
     print('Start offline training')
@@ -170,6 +173,13 @@ def main(_):
             wandb.log({f"replay_buffer/capacity": replay_buffer._capacity}, step=i)
             wandb.log({f"replay_buffer/size": replay_buffer._size}, step=i)
             wandb.log({f"replay_buffer/fullness": replay_buffer._size / replay_buffer._capacity}, step=i)
+
+    eval_info = evaluate_kitchen(agent,
+                         eval_env,
+                         num_episodes=100,
+                         progress_bar=False)
+    for k, v in eval_info.items():
+        wandb.log({f'evaluation/{k}': v}, step=i)
 
     agent.save_checkpoint(os.path.join(save_dir, "offline_checkpoints"), i, -1)
 
@@ -235,7 +245,7 @@ def main(_):
                         wandb.log({f'training/{k}': v}, step=i + FLAGS.max_gradient_steps)
                         # print(k, v)
 
-            if i % FLAGS.eval_interval == 0:
+            if i % FLAGS.online_eval_interval == 0:
                 eval_info = evaluate_kitchen(agent,
                                      eval_env,
                                      num_episodes=FLAGS.eval_episodes,
@@ -355,5 +365,24 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_diversekitch
 --task "diversekitchen_indistribution-play+expert" \
 
 
+
+
+XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_diversekitchen.py \
+--task "diversekitchen_indistribution-expert_demos" \
+--tqdm=true \
+--project dev \
+--algorithm ddpm_bc \
+--proprio=true \
+--description proprio \
+--eval_episodes 100 \
+--eval_interval 50000 \
+--log_interval 1000 \
+--max_gradient_steps 500_000 \
+--finetune_online=false \
+--max_online_gradient_steps 500_000 \
+--replay_buffer_size 400_000 \
+--batch_size 64 \
+--seed 0 \
+--debug=true
 
 """

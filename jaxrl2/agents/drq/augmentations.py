@@ -13,18 +13,29 @@ def random_crop(key, img, padding):
     )
     return jax.lax.dynamic_slice(padded_img, crop_from, img.shape)
 
-#def batched_random_crop(key, imgs, padding=4):
+# def batched_random_crop(key, imgs, padding=4):
 #    keys = jax.random.split(key, imgs.shape[0])
 #    return jax.vmap(random_crop, (0, 0, None))(keys, imgs, padding)
+
+# def batched_random_crop(key, obs, pixel_key=None, padding=4):
+#     if pixel_key is None:
+#         imgs = obs
+#     else:
+#         imgs = obs[pixel_key]
+#     keys = jax.random.split(key, imgs.shape[0])
+#     imgs = jax.vmap(random_crop, (0, 0, None))(keys, imgs, padding)
+#     return obs.copy(add_or_replace={pixel_key: imgs})
 
 def batched_random_crop(key, obs, pixel_key=None, padding=4):
     if pixel_key is None:
         imgs = obs
+        keys = jax.random.split(key, imgs.shape[0])
+        return jax.vmap(random_crop, (0, 0, None))(keys, imgs, padding)
     else:
         imgs = obs[pixel_key]
-    keys = jax.random.split(key, imgs.shape[0])
-    imgs = jax.vmap(random_crop, (0, 0, None))(keys, imgs, padding)
-    return obs.copy(add_or_replace={pixel_key: imgs})
+        keys = jax.random.split(key, imgs.shape[0])
+        imgs = jax.vmap(random_crop, (0, 0, None))(keys, imgs, padding)
+        return obs.copy(add_or_replace={pixel_key: imgs})
 
 @partial(jax.pmap, axis_name='pmap', static_broadcasted_argnums=(1))
 def batched_random_crop_parallel(key, imgs, padding):

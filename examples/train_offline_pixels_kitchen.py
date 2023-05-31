@@ -49,6 +49,7 @@ flags.DEFINE_integer('eval_episodes', 250,
                      'Number of episodes used for evaluation.')
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 5000, 'Eval interval.')
+flags.DEFINE_integer('online_eval_interval', 5000, 'Eval interval.')
 flags.DEFINE_integer('batch_size', 256, 'Mini batch size.')
 flags.DEFINE_integer('max_gradient_steps', int(5e5), 'Number of training steps.')
 flags.DEFINE_integer('max_online_gradient_steps', int(5e5), 'Number of training steps.')
@@ -161,6 +162,13 @@ def main(_):
             wandb.log({f"replay_buffer/size": replay_buffer._size}, step=i)
             wandb.log({f"replay_buffer/fullness": replay_buffer._size / replay_buffer._capacity}, step=i)
 
+    eval_info = evaluate_kitchen(agent,
+                         eval_env,
+                         num_episodes=100,
+                         progress_bar=False)
+    for k, v in eval_info.items():
+        wandb.log({f'evaluation/{k}': v}, step=i)
+
     agent.save_checkpoint(os.path.join(save_dir, "offline_checkpoints"), i, -1)
 
     if FLAGS.finetune_online and FLAGS.max_online_gradient_steps > 0:
@@ -221,7 +229,7 @@ def main(_):
                         wandb.log({f'training/{k}': v}, step=i + FLAGS.max_gradient_steps)
                         # print(k, v)
 
-            if i % FLAGS.eval_interval == 0:
+            if i % FLAGS.online_eval_interval == 0:
                 eval_info = evaluate_kitchen(agent,
                                      eval_env,
                                      num_episodes=FLAGS.eval_episodes,

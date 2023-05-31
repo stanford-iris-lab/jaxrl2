@@ -3,7 +3,8 @@ from typing import Sequence
 import flax.linen as nn
 import jax.numpy as jnp
 
-from jaxrl5.networks import default_init
+# from jaxrl5.networks import default_init
+from jaxrl2.networks.jaxrl5_networks import default_init
 
 
 class D4PGEncoder(nn.Module):

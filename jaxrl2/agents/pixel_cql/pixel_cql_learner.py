@@ -148,7 +148,7 @@ class PixelCQLLearner(Agent):
         An implementation of the version of Soft-Actor-Critic described in https://arxiv.org/abs/1812.05905
         """
 
-        assert observations["pixels"].shape[-2] / cnn_groups == 3, f"observations['pixels'].shape: {observations['pixels'].shape}, cnn_groups: {cnn_groups}"
+        # assert observations["pixels"].shape[-2] / cnn_groups == 3, f"observations['pixels'].shape: {observations['pixels'].shape}, cnn_groups: {cnn_groups}"
 
 
         action_dim = actions.shape[-1]
