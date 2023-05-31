@@ -19,6 +19,7 @@ from jaxrl2.types import Params, PRNGKey
 import numpy as np
 
 from jaxrl2.networks.encoders import ImpalaEncoder
+# from jaxrl2.networks.pixel_multiplexer import PixelMultiplexer as PixelMultiplexerJaxRL2
 
 def _unpack(batch):
     # Assuming that if next_observation is missing, it's combined with observation:
@@ -158,21 +159,53 @@ class PixelDDPMBCLearner(Agent):
                 strides=cnn_strides,
                 padding=cnn_padding,
             )
+
+            actor_cls = PixelMultiplexer(
+                encoder_cls=encoder_cls,
+                network_cls=actor_cls,
+                latent_dim=latent_dim,
+                pixel_keys=pixel_keys,
+                depth_keys=depth_keys,
+            )
+
         elif encoder == "impala":
             # encoder_cls = ImpalaEncoder(use_multiplicative_cond=use_multiplicative_cond)
             encoder_cls = partial(ImpalaEncoder, use_multiplicative_cond=use_multiplicative_cond)
+            # actor_cls = PixelMultiplexerJaxRL2(
+            #     encoder=encoder_cls,
+            #     network=actor_cls,
+            #     latent_dim=latent_dim,
+            # )
+
+            actor_cls = PixelMultiplexer(
+                encoder_cls=encoder_cls,
+                network_cls=actor_cls,
+                latent_dim=latent_dim,
+                pixel_keys=pixel_keys,
+                depth_keys=depth_keys,
+                skip_normalization=True,
+            )
+            # actor_cls = PixelMultiplexer(encoder_cls=encoder_cls, network_cls=actor_cls, latent_dim=latent_dim, pixel_keys=pixel_keys, depth_keys=depth_keys, skip_normalization=True)
         elif encoder == "resnet":
             encoder_cls = partial(ResNetV2Encoder, stage_sizes=(2, 2, 2, 2))
+
+            actor_cls = PixelMultiplexer(
+                encoder_cls=encoder_cls,
+                network_cls=actor_cls,
+                latent_dim=latent_dim,
+                pixel_keys=pixel_keys,
+                depth_keys=depth_keys,
+            )
         else:
             raise ValueError(f"Unsupported encoder: {encoder}")
 
-        actor_cls = PixelMultiplexer(
-            encoder_cls=encoder_cls,
-            network_cls=actor_cls,
-            latent_dim=latent_dim,
-            pixel_keys=pixel_keys,
-            depth_keys=depth_keys,
-        )
+        # actor_cls = PixelMultiplexer(
+        #     encoder_cls=encoder_cls,
+        #     network_cls=actor_cls,
+        #     latent_dim=latent_dim,
+        #     pixel_keys=pixel_keys,
+        #     depth_keys=depth_keys,
+        # )
         #observations = jnp.expand_dims(observations, axis=0)
         #actions = jnp.expand_dims(actions, axis=0)
         #import pdb; pdb.set_trace()

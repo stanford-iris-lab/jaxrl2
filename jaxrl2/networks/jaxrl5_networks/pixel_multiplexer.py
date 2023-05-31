@@ -15,6 +15,7 @@ class PixelMultiplexer(nn.Module):
     stop_gradient: bool = False
     pixel_keys: Tuple[str, ...] = ("pixels",)
     depth_keys: Tuple[str, ...] = ()
+    skip_normalization: bool = False
 
     @nn.compact
     def __call__(
@@ -32,12 +33,20 @@ class PixelMultiplexer(nn.Module):
 
         xs = []
         for i, (pixel_key, depth_key) in enumerate(zip(self.pixel_keys, depth_keys)):
-            x = observations[pixel_key].astype(jnp.float32) / 255.0
+            # x = observations[pixel_key].astype(jnp.float32) / 255.0
+            if not self.skip_normalization:
+                x = observations[pixel_key].astype(jnp.float32) / 255.0
+            else:
+                x = observations[pixel_key]
+
+
             if depth_key is not None:
                 # The last dim is always for stacking, even if it's 1.
                 x = jnp.concatenate([x, observations[depth_key]], axis=-2)
 
-            x = jnp.reshape(x, (*x.shape[:-2], -1))
+            # x = jnp.reshape(x, (*x.shape[:-2], -1))
+            if not self.skip_normalization:
+                x = jnp.reshape(x, (*x.shape[:-2], -1))
 
             x = self.encoder_cls(name=f"encoder_{i}")(x)
 
