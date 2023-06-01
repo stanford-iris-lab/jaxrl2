@@ -16,7 +16,7 @@ from jaxrl2.evaluation import evaluate_adroit
 from jaxrl2.agents.pixel_cql import PixelCQLLearner
 from jaxrl2.agents.pixel_iql import PixelIQLLearner
 from jaxrl2.agents.pixel_bc import PixelBCLearner
-# from jaxrl2.agents.cql_encodersep_parallel import PixelCQLLearnerEncoderSepParallel
+from jaxrl2.agents import PixelCQLLearnerEncoderSepParallel
 
 import jaxrl2.wrappers.combo_wrappers as wrappers
 from jaxrl2.wrappers.frame_stack import FrameStack
@@ -132,6 +132,7 @@ def main(_):
     for i in tbar:
         tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}] (offline)")
         batch = next(replay_buffer_iterator)
+
         update_info = agent.update(batch)
 
         if i % FLAGS.log_interval == 0:
@@ -333,6 +334,25 @@ export KITCHEN_DATASETS=/iris/u/khatch/vd5rl/datasets/diversekitchen
 # door, use camera4
 # pen, use camera5
 # relocate, camera6
+
+XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_adroit.py \
+--task "adroithand_door-binary2-v0" \
+--datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/adroit_hand/door-human-v1/binary_reward/camera4/imsize_128 \
+--tqdm=true \
+--camera_angle=camera4 \
+--project dev \
+--algorithm calql \
+--proprio=true \
+--description proprio \
+--eval_episodes 25 \
+--eval_interval 100 \
+--log_interval 100 \
+--max_gradient_steps 5_000 \
+--max_online_gradient_steps 500_000 \
+--replay_buffer_size 515_000 \
+--batch_size 128 \
+--seed 2 \
+--debug=true
 
 
 """

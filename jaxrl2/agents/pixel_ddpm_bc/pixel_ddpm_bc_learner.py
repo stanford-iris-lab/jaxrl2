@@ -187,7 +187,16 @@ class PixelDDPMBCLearner(Agent):
             )
             # actor_cls = PixelMultiplexer(encoder_cls=encoder_cls, network_cls=actor_cls, latent_dim=latent_dim, pixel_keys=pixel_keys, depth_keys=depth_keys, skip_normalization=True)
         elif encoder == "resnet":
-            encoder_cls = partial(ResNetV2Encoder, stage_sizes=(2, 2, 2, 2))
+            # encoder_cls = partial(ResNetV2Encoder, stage_sizes=(2, 2, 2, 2))
+            encoder_cls = partial(ResNetV2Encoder, stage_sizes=(2, 2, 2))
+
+            actor_cls = PixelMultiplexer(
+                encoder_cls=encoder_cls,
+                network_cls=actor_cls,
+                latent_dim=latent_dim,
+                pixel_keys=pixel_keys,
+                depth_keys=depth_keys,
+            )
 
             actor_cls = PixelMultiplexer(
                 encoder_cls=encoder_cls,
