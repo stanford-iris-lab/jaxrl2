@@ -119,10 +119,18 @@ def main(_):
 
     # assert kwargs["cnn_groups"] == 1
     print(globals()[FLAGS.config.model_constructor])
-    obs = env.observation_space.sample()
-    obs["pixels"] = obs["pixels"][None]
-    obs["states"] = obs["states"][None]
-    agent = globals()[FLAGS.config.model_constructor](FLAGS.seed, obs, env.action_space.sample()[None], **kwargs)
+    # obs = env.observation_space.sample()
+    # obs["pixels"] = obs["pixels"][None]
+    # obs["states"] = obs["states"][None]
+    # agent = globals()[FLAGS.config.model_constructor](FLAGS.seed, obs, env.action_space.sample()[None], **kwargs)
+    if FLAGS.algorithm in ('idql', 'ddpm_bc'):
+        agent = globals()[FLAGS.config.model_constructor].create(
+        FLAGS.seed, env.observation_space, env.action_space,
+        **kwargs)
+    else:
+        agent = globals()[FLAGS.config.model_constructor](
+            FLAGS.seed, env.observation_space.sample(), env.action_space.sample(),
+            **kwargs)
     print('Agent created')
 
     print("Loading replay buffer")
@@ -216,7 +224,10 @@ def main(_):
                 observation, done = env.reset(), False
 
             batch = next(replay_buffer_iterator)
-            out = agent.update(batch)
+            if FLAGS.algorithm == "idql":
+                out = agent.update_online(batch)
+            else:
+                out = agent.update(batch)
 
             if isinstance(out, tuple):
                 agent, update_info = out

@@ -321,10 +321,19 @@ class PixelDDPMBCLearner(Agent):
 
         return new_agent, info
 
-    @jax.jit
+    # @jax.jit
+    # def eval_actions(self, observations: jnp.ndarray):
+    #     rng = self.rng
+    #
+    #     score_params = self.target_score_model.params
+    #     actions, rng = ddpm_sampler(self.score_model.apply_fn, score_params, self.T, rng, self.act_dim, observations, self.alphas, self.alpha_hats, self.betas, self.ddpm_temperature, self.M, self.clip_sampler)
+    #
+    #     return jnp.array(actions.squeeze()), self.replace(rng=rng)
+    # @jax.jit
     def eval_actions(self, observations: jnp.ndarray):
         rng = self.rng
 
+        observations = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0).repeat(self.N, axis = 0), observations) #Add dim
         score_params = self.target_score_model.params
         actions, rng = ddpm_sampler(self.score_model.apply_fn, score_params, self.T, rng, self.act_dim, observations, self.alphas, self.alpha_hats, self.betas, self.ddpm_temperature, self.M, self.clip_sampler)
 

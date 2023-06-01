@@ -28,6 +28,8 @@ from jaxrl2.data import MemoryEfficientReplayBuffer
 
 from glob import glob
 
+from flax.core import frozen_dict
+
 tf.config.experimental.set_visible_devices([], "GPU")
 
 FLAGS = flags.FLAGS
@@ -149,7 +151,22 @@ def main(_):
         tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}]  (offline)")
         # batch = next(replay_buffer_iterator)
         batch = replay_buffer.sample(FLAGS.batch_size)
+
+        # new_batch = {}
+        # new_batch["actions"] = batch["actions"][None]
+        # new_batch["dones"] = batch["dones"][None]
+        # new_batch["masks"] = batch["masks"][None]
+        # new_batch["rewards"] = batch["rewards"][None]
+        # new_batch["observations"] = {"pixels":None, "states":None}
+        # new_batch["observations"]["pixels"] = batch["observations"]["pixels"][None]
+        # new_batch["observations"]["states"] = batch["observations"]["states"][None]
+        # new_batch["next_observations"] = {"states":None}
+        # new_batch["next_observations"]["states"] = batch["next_observations"]["states"][None]
+        # new_batch = frozen_dict.freeze(new_batch)
+        # out = agent.update(new_batch)
+
         out = agent.update(batch)
+
 
         if isinstance(out, tuple):
             agent, update_info = out
@@ -353,7 +370,7 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_diversekitch
 --task "diversekitchen_indistribution-expert_demos" \
 --tqdm=true \
 --project dev \
---algorithm ddpm_bc \
+--algorithm bc \
 --proprio=true \
 --description proprio \
 --eval_episodes 100 \
@@ -368,4 +385,22 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_diversekitch
 --seed 0 \
 --debug=true
 
+
+XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_diversekitchen.py \
+--task "diversekitchen_indistribution-expert_demos" \
+--tqdm=true \
+--project dev \
+--algorithm calql \
+--proprio=true \
+--description proprio \
+--eval_episodes 100 \
+--eval_interval 50000 \
+--online_eval_interval 50000 \
+--log_interval 1000 \
+--max_gradient_steps 500_000 \
+--max_online_gradient_steps 500_000 \
+--replay_buffer_size 400_000 \
+--batch_size 128 \
+--seed 0 \
+--debug=true
 """

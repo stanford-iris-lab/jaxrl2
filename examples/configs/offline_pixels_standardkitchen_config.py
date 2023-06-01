@@ -173,6 +173,24 @@ def get_calql_config():
 
     return config
 
+def get_ddpm_bc_config():
+    config = ml_collections.ConfigDict()
+
+    config.actor_lr = 3e-4
+
+    # config.encoder = "resnet"
+    # config.encoder = "d4pg"
+    config.encoder = "impala"
+    config.use_multiplicative_cond = False
+
+    config.cosine_decay = True
+    config.use_layer_norm = True
+    config.dropout_rate = 0.1
+
+    config.dropout_rate = config_dict.placeholder(float)
+
+    return config
+
 def get_config(config_string):
     possible_structures = {
         "bc": ml_collections.ConfigDict(
@@ -186,6 +204,9 @@ def get_config(config_string):
         ),
         "calql": ml_collections.ConfigDict(
             {"model_constructor": "PixelCQLLearnerEncoderSepParallel", "model_config": get_calql_config()}
+        ),
+        "ddpm_bc": ml_collections.ConfigDict(
+            {"model_constructor": "PixelDDPMBCLearner", "model_config": get_ddpm_bc_config()}
         ),
     }
     return possible_structures[config_string]

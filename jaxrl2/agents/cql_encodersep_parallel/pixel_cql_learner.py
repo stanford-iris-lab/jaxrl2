@@ -72,7 +72,8 @@ def _update_jit(
     basis_projection_coefficient: float, use_basis_projection: bool, use_gaussian_policy: bool, min_q_version: int, bound_q_with_mc:bool = False,):
 
     # Comment out when using the naive replay buffer
-    # batch = _unpack(batch)
+    batch = _unpack(batch)
+
     aug_pixels = batch['observations']['pixels']
     aug_next_pixels = batch['next_observations']['pixels']
 

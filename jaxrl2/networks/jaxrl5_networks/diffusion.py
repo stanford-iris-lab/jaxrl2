@@ -83,8 +83,10 @@ def ddpm_sampler(actor_apply_fn, actor_params, T, rng, act_dim, observations, al
         current_x = alpha_1 * (current_x - alpha_2 * eps_pred)
 
         rng, key = jax.random.split(rng, 2)
-        z = jax.random.normal(key,
-                            shape=(observations.shape[0], current_x.shape[1]),)
+        # z = jax.random.normal(key, shape=(observations.shape[0], current_x.shape[1]),)
+        z = jax.random.normal(key, shape=(observations['pixels'].shape[0], current_x.shape[1]),)
+
+
         z_scaled = sample_temperature * z
         current_x = current_x + (time > 0) * (jnp.sqrt(betas[time]) * z_scaled)
 
