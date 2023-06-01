@@ -44,7 +44,6 @@ from jaxrl2.networks.normal_policy import NormalPolicy
 from jaxrl2.networks.values import StateActionEnsemble, StateValue
 from jaxrl2.networks.values.state_action_value import StateActionValue
 from jaxrl2.networks.values.state_value import StateValueEnsemble
-from jaxrl2.networks import mae, loading_utils
 from jaxrl2.types import Params, PRNGKey
 from jaxrl2.utils.target_update import soft_target_update
 # from jaxrl_m.vision import bigvision_resnetv2 as resnet
@@ -238,6 +237,7 @@ class PixelCQLLearnerEncoderSep(Agent):
         elif encoder_type == 'resnetv2-50-1':
             encoder_def = encoders[encoder_type]()
         elif encoder_type == 'mae':
+            from jaxrl2.networks import mae, loading_utils
             encoder_def = mae.MAEEncoder()
         else:
             raise ValueError('encoder type not found!')
@@ -264,6 +264,7 @@ class PixelCQLLearnerEncoderSep(Agent):
         elif policy_encoder_type == 'same':
             policy_encoder_def = encoder_def
         elif policy_encoder_type == 'mae':
+            from jaxrl2.networks import mae, loading_utils
             policy_encoder_def = mae.MAEEncoder()
         else:
             raise ValueError('encoder type not found!')
