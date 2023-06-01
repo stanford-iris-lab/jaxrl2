@@ -137,34 +137,40 @@ class PixelIQLLearner(Agent):
         rng = jax.random.PRNGKey(seed)
         rng, actor_key, critic_key, value_key = jax.random.split(rng, 4)
 
-        encoder_defs = []
-        for i in range(cnn_groups):
-            if encoder == "d4pg":
-                encoder_def = D4PGEncoder(cnn_features, cnn_filters, cnn_strides, cnn_padding)
-                # encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups) ###===### ###---###
-            elif encoder == "impala":
-                encoder_def = ImpalaEncoder(use_multiplicative_cond=use_multiplicative_cond)
-            elif encoder == "resnet":
-                encoder_def = ResNetV2Encoder((2, 2, 2, 2))
-            elif encoder == 'resnet_18_v1':
-                encoder_def = ResNet18(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
-                                       use_multiplicative_cond=use_multiplicative_cond,
-                                       use_spatial_learned_embeddings=use_spatial_learned_embeddings,
-                                       num_spatial_blocks=8)
-            elif encoder == 'resnet_34_v1':
-                encoder_def = ResNet34(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
-                                       use_multiplicative_cond=use_multiplicative_cond,
-                                       use_spatial_learned_embeddings=use_spatial_learned_embeddings,
-                                       num_spatial_blocks=8,)
-            encoder_defs.append(encoder_def)
+        # encoder_defs = []
+        # for i in range(cnn_groups):
+        if encoder == "d4pg":
+            encoder_def = D4PGEncoder(cnn_features, cnn_filters, cnn_strides, cnn_padding)
+            # encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups) ###===### ###---###
+        elif encoder == "impala":
+            encoder_def = ImpalaEncoder(use_multiplicative_cond=use_multiplicative_cond)
+        elif encoder == "resnet":
+            encoder_def = ResNetV2Encoder((2, 2, 2, 2))
+        elif encoder == 'resnet_18_v1':
+            encoder_def = ResNet18(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
+                                   use_multiplicative_cond=use_multiplicative_cond,
+                                   use_spatial_learned_embeddings=use_spatial_learned_embeddings,
+                                   num_spatial_blocks=8)
+        elif encoder == 'resnet_34_v1':
+            encoder_def = ResNet34(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
+                                   use_multiplicative_cond=use_multiplicative_cond,
+                                   use_spatial_learned_embeddings=use_spatial_learned_embeddings,
+                                   num_spatial_blocks=8,)
+            # encoder_defs.append(encoder_def)
 
         if decay_steps is not None:
             actor_lr = optax.cosine_decay_schedule(actor_lr, decay_steps)
         policy_def = UnitStdNormalPolicy(
             hidden_dims, action_dim, dropout_rate=dropout_rate, apply_tanh=False
         )
-        actor_def = PixelMultiplexerMultiple(
-            encoders=encoder_defs,
+        # actor_def = PixelMultiplexerMultiple(
+        #     encoders=encoder_defs,
+        #     network=policy_def,
+        #     latent_dim=latent_dim,
+        #     stop_gradient=share_encoder,
+        # )
+        actor_def = PixelMultiplexer(
+            encoder=encoder_def,
             network=policy_def,
             latent_dim=latent_dim,
             stop_gradient=share_encoder,

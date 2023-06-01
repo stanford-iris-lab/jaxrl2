@@ -79,26 +79,26 @@ class PixelBCLearner(Agent):
         rng = jax.random.PRNGKey(seed)
         rng, actor_key = jax.random.split(rng)
 
-        encoder_defs = []
-        for i in range(cnn_groups):
-            if encoder == "d4pg":
-                encoder_def = D4PGEncoder(cnn_features, cnn_filters, cnn_strides, cnn_padding)
-                # encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups) ###===### ###---###
-            elif encoder == "impala":
-                encoder_def = ImpalaEncoder(use_multiplicative_cond=use_multiplicative_cond)
-            elif encoder == "resnet":
-                encoder_def = ResNetV2Encoder((2, 2, 2, 2))
-            elif encoder == 'resnet_18_v1':
-                encoder_def = ResNet18(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
-                                       use_multiplicative_cond=use_multiplicative_cond,
-                                       use_spatial_learned_embeddings=use_spatial_learned_embeddings,
-                                       num_spatial_blocks=8)
-            elif encoder == 'resnet_34_v1':
-                encoder_def = ResNet34(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
-                                       use_multiplicative_cond=use_multiplicative_cond,
-                                       use_spatial_learned_embeddings=use_spatial_learned_embeddings,
-                                       num_spatial_blocks=8,)
-            encoder_defs.append(encoder_def)
+        # encoder_defs = []
+        # for i in range(cnn_groups):
+        if encoder == "d4pg":
+            encoder_def = D4PGEncoder(cnn_features, cnn_filters, cnn_strides, cnn_padding)
+            # encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups) ###===### ###---###
+        elif encoder == "impala":
+            encoder_def = ImpalaEncoder(use_multiplicative_cond=use_multiplicative_cond)
+        elif encoder == "resnet":
+            encoder_def = ResNetV2Encoder((2, 2, 2, 2))
+        elif encoder == 'resnet_18_v1':
+            encoder_def = ResNet18(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
+                                   use_multiplicative_cond=use_multiplicative_cond,
+                                   use_spatial_learned_embeddings=use_spatial_learned_embeddings,
+                                   num_spatial_blocks=8)
+        elif encoder == 'resnet_34_v1':
+            encoder_def = ResNet34(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
+                                   use_multiplicative_cond=use_multiplicative_cond,
+                                   use_spatial_learned_embeddings=use_spatial_learned_embeddings,
+                                   num_spatial_blocks=8,)
+            # encoder_defs.append(encoder_def)
         # encoder_def = ResNet34(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
         #                        use_multiplicative_cond=use_multiplicative_cond,
         #                        use_spatial_learned_embeddings=use_spatial_learned_embeddings,
@@ -112,12 +112,12 @@ class PixelBCLearner(Agent):
         policy_def = UnitStdNormalPolicy(
             hidden_dims, action_dim, dropout_rate=dropout_rate
         )
-        actor_def = PixelMultiplexerMultiple(
-            encoders=encoder_defs, network=policy_def, latent_dim=latent_dim
-        )
-        # actor_def = PixelMultiplexer(
-        #     encoder=encoder_def, network=policy_def, latent_dim=latent_dim
+        # actor_def = PixelMultiplexerMultiple(
+        #     encoders=encoder_defs, network=policy_def, latent_dim=latent_dim
         # )
+        actor_def = PixelMultiplexer(
+            encoder=encoder_def, network=policy_def, latent_dim=latent_dim
+        )
 
 
         actor_params = actor_def.init(actor_key, observations)["params"]
