@@ -48,6 +48,7 @@ def _unpack(batch):
     return batch
 
 
+
 def _share_encoder(source, target):
     # Use critic conv layers in actor:
     new_params = target.params.copy(

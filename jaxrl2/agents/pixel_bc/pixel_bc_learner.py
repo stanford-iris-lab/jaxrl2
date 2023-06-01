@@ -7,22 +7,28 @@ import jax.numpy as jnp
 import optax
 from flax.core.frozen_dict import FrozenDict
 from flax.training.train_state import TrainState
+# from flax.training import train_state
 
 from jaxrl2.agents.agent import Agent
 from jaxrl2.agents.bc.actor_updater import log_prob_update
 from jaxrl2.agents.drq.augmentations import batched_random_crop
 from jaxrl2.agents.drq.drq_learner import _unpack
 from jaxrl2.data.dataset import DatasetDict
-# from jaxrl2.networks.encoders import D4PGEncoder, ResNetV2Encoder
-from jaxrl2.networks.encoders import D4PGEncoderGroups ###===### ###---###
+from jaxrl2.networks.encoders import ResNetV2Encoder, ImpalaEncoder
+from jaxrl2.networks.encoders.resnet_encoderv1 import GroupConvWrapper, ResNet18, ResNet34, ResNetSmall, ResNet50
+from jaxrl2.networks.encoders import D4PGEncoder, D4PGEncoderGroups ###===### ###---###
 from jaxrl2.networks.normal_policy import UnitStdNormalPolicy
-from jaxrl2.networks.pixel_multiplexer import PixelMultiplexer
+from jaxrl2.networks.pixel_multiplexer import PixelMultiplexer, PixelMultiplexerMultiple
 from jaxrl2.types import Params, PRNGKey
 
 
 import os ###===###
 from flax.training import checkpoints
 from glob import glob ###---###
+
+from functools import partial
+from typing import Any
+
 
 @jax.jit
 def _update_jit(
@@ -57,30 +63,63 @@ class PixelBCLearner(Agent):
         latent_dim: int = 50,
         dropout_rate: Optional[float] = None,
         encoder: str = "d4pg",
+        encoder_norm: str = 'batch',
+        use_spatial_softmax=False,
+        softmax_temperature=-1,
+        use_multiplicative_cond=False,
+        use_spatial_learned_embeddings=False,
     ):
         """
         An implementation of the version of Soft-Actor-Critic described in https://arxiv.org/abs/1812.05905
         """
+        # assert observations["pixels"].shape[-2] / cnn_groups == 3, f"observations['pixels'].shape: {observations['pixels'].shape}, cnn_groups: {cnn_groups}"
 
         action_dim = actions.shape[-1]
 
         rng = jax.random.PRNGKey(seed)
         rng, actor_key = jax.random.split(rng)
 
+        # encoder_defs = []
+        # for i in range(cnn_groups):
         if encoder == "d4pg":
-            # encoder_def = D4PGEncoder(cnn_features, cnn_filters, cnn_strides, cnn_padding)
-            encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups) ###===### ###---###
+            encoder_def = D4PGEncoder(cnn_features, cnn_filters, cnn_strides, cnn_padding)
+            # encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups) ###===### ###---###
+        elif encoder == "impala":
+            encoder_def = ImpalaEncoder(use_multiplicative_cond=use_multiplicative_cond)
         elif encoder == "resnet":
             encoder_def = ResNetV2Encoder((2, 2, 2, 2))
+        elif encoder == 'resnet_18_v1':
+            encoder_def = ResNet18(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
+                                   use_multiplicative_cond=use_multiplicative_cond,
+                                   use_spatial_learned_embeddings=use_spatial_learned_embeddings,
+                                   num_spatial_blocks=8)
+        elif encoder == 'resnet_34_v1':
+            encoder_def = ResNet34(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
+                                   use_multiplicative_cond=use_multiplicative_cond,
+                                   use_spatial_learned_embeddings=use_spatial_learned_embeddings,
+                                   num_spatial_blocks=8,)
+            # encoder_defs.append(encoder_def)
+        # encoder_def = ResNet34(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
+        #                        use_multiplicative_cond=use_multiplicative_cond,
+        #                        use_spatial_learned_embeddings=use_spatial_learned_embeddings,
+        #                        num_spatial_blocks=8,
+        #                        conv=partial(GroupConvWrapper, groups=cnn_groups))
+        # encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups)
+
 
         if decay_steps is not None:
             actor_lr = optax.cosine_decay_schedule(actor_lr, decay_steps)
         policy_def = UnitStdNormalPolicy(
             hidden_dims, action_dim, dropout_rate=dropout_rate
         )
+        # actor_def = PixelMultiplexerMultiple(
+        #     encoders=encoder_defs, network=policy_def, latent_dim=latent_dim
+        # )
         actor_def = PixelMultiplexer(
             encoder=encoder_def, network=policy_def, latent_dim=latent_dim
         )
+
+
         actor_params = actor_def.init(actor_key, observations)["params"]
         actor = TrainState.create(
             apply_fn=actor_def.apply,

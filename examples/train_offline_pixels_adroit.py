@@ -16,7 +16,7 @@ from jaxrl2.evaluation import evaluate_adroit
 from jaxrl2.agents.pixel_cql import PixelCQLLearner
 from jaxrl2.agents.pixel_iql import PixelIQLLearner
 from jaxrl2.agents.pixel_bc import PixelBCLearner
-from jaxrl2.agents.cql_encodersep_parallel import PixelCQLLearnerEncoderSepParallel
+from jaxrl2.agents import PixelCQLLearnerEncoderSepParallel
 
 import jaxrl2.wrappers.combo_wrappers as wrappers
 from jaxrl2.wrappers.frame_stack import FrameStack
@@ -39,7 +39,7 @@ flags.DEFINE_string('description', "default", 'WandB project.')
 flags.DEFINE_string('task', "microwave", 'Task for the kitchen env.')
 flags.DEFINE_string('camera_angle', "camera2", 'Camera angle.')
 flags.DEFINE_string('datadir', "microwave", 'Directory with dataset files.')
-flags.DEFINE_integer('ep_length', 280, 'Episode length.')
+flags.DEFINE_integer('ep_length', 200, 'Episode length.')
 flags.DEFINE_integer('action_repeat', 1, 'Random seed.')
 flags.DEFINE_integer('replay_buffer_size', int(1e6), 'Number of transitions the (offline) replay buffer can hold.')
 flags.DEFINE_integer('seed', 42, 'Random seed.')
@@ -47,6 +47,7 @@ flags.DEFINE_integer('eval_episodes', 250,
                      'Number of episodes used for evaluation.')
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 5000, 'Eval interval.')
+flags.DEFINE_integer('online_eval_interval', 5000, 'Eval interval.')
 flags.DEFINE_integer('batch_size', 256, 'Mini batch size.')
 flags.DEFINE_integer('max_gradient_steps', int(5e5), 'Number of training steps.')
 flags.DEFINE_integer('max_online_gradient_steps', int(5e5), 'Number of training steps.')
@@ -71,7 +72,7 @@ def main(_):
 
     config_flags.DEFINE_config_file(
         'config',
-        f'./configs/offline_pixels_config.py:{FLAGS.algorithm}',
+        f'./configs/offline_pixels_adroit_config.py:{FLAGS.algorithm}',
         'File path to the training hyperparameter configuration.',
         lock_config=False)
 
@@ -131,6 +132,7 @@ def main(_):
     for i in tbar:
         tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}] (offline)")
         batch = next(replay_buffer_iterator)
+
         update_info = agent.update(batch)
 
         if i % FLAGS.log_interval == 0:
@@ -209,7 +211,7 @@ def main(_):
                         wandb.log({f'training/{k}': v}, step=i + FLAGS.max_gradient_steps)
                         # print(k, v)
 
-            if i % FLAGS.eval_interval == 0:
+            if i % FLAGS.online_eval_interval == 0:
                 eval_info = evaluate_adroit(agent,
                                      eval_env,
                                      num_episodes=FLAGS.eval_episodes,
@@ -237,7 +239,7 @@ def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
             task = task.replace("-cloned", "")
 
         env = wrappers.AdroitHand(task, 128, 128, proprio=proprio, camera_angle=camera_angle)
-        env = wrappers.ActionRepeat(env, action_repeat)
+        # env = wrappers.ActionRepeat(env, action_repeat)
         env = wrappers.NormalizeActions(env)
         env = wrappers.TimeLimit(env, ep_length)
         env = FrameStack(env, num_stack=3)
@@ -333,40 +335,24 @@ export KITCHEN_DATASETS=/iris/u/khatch/vd5rl/datasets/diversekitchen
 # pen, use camera5
 # relocate, camera6
 
-
 XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_adroit.py \
---task "adroithand_hammer-human-v0" \
---datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/adroit_hand/hammer-human-v1/camera2/imsize_64 \
+--task "adroithand_door-binary2-v0" \
+--datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/adroit_hand/door-human-v1/binary_reward/camera4/imsize_128 \
 --tqdm=true \
---camera_angle=camera2 \
---project vd5rl_kitchen \
---algorithm cql \
---proprio=true \
---description default \
---eval_episodes 1 \
---eval_interval 200 \
---max_gradient_steps 10_000 \
---replay_buffer_size 600_000 \
---seed 0 \
---debug=true
-
-
-XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_adroit.py \
---task "adroithand_hammer-binary2-v0" \
---datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/adroit_hand/hammer-human-v1/camera2/imsize_128 \
---tqdm=true \
---camera_angle=camera2 \
---project bench_standardkitchen \
---algorithm cql \
+--camera_angle=camera4 \
+--project dev \
+--algorithm calql \
 --proprio=true \
 --description proprio \
 --eval_episodes 25 \
---eval_interval 10000 \
---log_interval 1000 \
---max_gradient_steps 500_000 \
+--eval_interval 100 \
+--log_interval 100 \
+--max_gradient_steps 5_000 \
 --max_online_gradient_steps 500_000 \
---replay_buffer_size 700_000 \
+--replay_buffer_size 515_000 \
 --batch_size 128 \
---seed 0 \
+--seed 2 \
 --debug=true
+
+
 """

@@ -69,11 +69,12 @@ class DDPM(nn.Module):
 @partial(jax.jit, static_argnames=('actor_apply_fn', 'act_dim', 'T', 'repeat_last_step', 'clip_sampler', 'training'))
 def ddpm_sampler(actor_apply_fn, actor_params, T, rng, act_dim, observations, alphas, alpha_hats, betas, sample_temperature, repeat_last_step, clip_sampler, training = False):
 
-    batch_size = observations.shape[0]
-    
+    # batch_size = observations.shape[0]
+    batch_size = observations['pixels'].shape[0]
+
     def fn(input_tuple, time):
         current_x, rng = input_tuple
-        
+
         input_time = jnp.expand_dims(jnp.array([time]).repeat(current_x.shape[0]), axis = 1)
         eps_pred = actor_apply_fn({"params": actor_params}, observations, current_x, input_time, training = training)
 
@@ -82,8 +83,10 @@ def ddpm_sampler(actor_apply_fn, actor_params, T, rng, act_dim, observations, al
         current_x = alpha_1 * (current_x - alpha_2 * eps_pred)
 
         rng, key = jax.random.split(rng, 2)
-        z = jax.random.normal(key,
-                            shape=(observations.shape[0], current_x.shape[1]),)
+        # z = jax.random.normal(key, shape=(observations.shape[0], current_x.shape[1]),)
+        z = jax.random.normal(key, shape=(observations['pixels'].shape[0], current_x.shape[1]),)
+
+
         z_scaled = sample_temperature * z
         current_x = current_x + (time > 0) * (jnp.sqrt(betas[time]) * z_scaled)
 
@@ -97,7 +100,7 @@ def ddpm_sampler(actor_apply_fn, actor_params, T, rng, act_dim, observations, al
 
     for _ in range(repeat_last_step):
         input_tuple, () = fn(input_tuple, 0)
-    
+
     action_0, rng = input_tuple
     action_0 = jnp.clip(action_0, -1, 1)
 

@@ -16,10 +16,11 @@ from jaxrl2.agents.drq.drq_learner import _share_encoder, _unpack
 from jaxrl2.agents.iql.actor_updater import update_actor
 from jaxrl2.agents.iql.critic_updater import update_q, update_v
 from jaxrl2.data.dataset import DatasetDict
-# from jaxrl2.networks.encoders import D4PGEncoder
-from jaxrl2.networks.encoders import D4PGEncoderGroups ###===### ###---###
+from jaxrl2.networks.encoders import ResNetV2Encoder, ImpalaEncoder
+from jaxrl2.networks.encoders.resnet_encoderv1 import GroupConvWrapper, ResNet18, ResNet34, ResNetSmall, ResNet50
+from jaxrl2.networks.encoders import D4PGEncoder, D4PGEncoderGroups ###===### ###---###
 from jaxrl2.networks.normal_policy import UnitStdNormalPolicy
-from jaxrl2.networks.pixel_multiplexer import PixelMultiplexer
+from jaxrl2.networks.pixel_multiplexer import PixelMultiplexer, PixelMultiplexerMultiple
 from jaxrl2.networks.values import StateActionEnsemble, StateValue
 from jaxrl2.types import Params, PRNGKey
 from jaxrl2.utils.target_update import soft_target_update
@@ -111,10 +112,18 @@ class PixelIQLLearner(Agent):
         critic_reduction: str = "min",
         dropout_rate: Optional[float] = None,
         share_encoder: bool = False,
+        encoder: str = "d4pg",
+        encoder_norm: str = 'batch',
+        use_spatial_softmax=False,
+        softmax_temperature=-1,
+        use_multiplicative_cond=False,
+        use_spatial_learned_embeddings=False,
     ):
         """
         An implementation of the version of Soft-Actor-Critic described in https://arxiv.org/abs/1812.05905
         """
+        # assert observations["pixels"].shape[-2] / cnn_groups == 3, f"observations['pixels'].shape: {observations['pixels'].shape}, cnn_groups: {cnn_groups}"
+
 
         action_dim = actions.shape[-1]
 
@@ -128,21 +137,45 @@ class PixelIQLLearner(Agent):
         rng = jax.random.PRNGKey(seed)
         rng, actor_key, critic_key, value_key = jax.random.split(rng, 4)
 
-        # encoder_def = D4PGEncoder(cnn_features, cnn_filters, cnn_strides, cnn_padding)
-        encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups) ###===### ###---###
-
+        # encoder_defs = []
+        # for i in range(cnn_groups):
+        if encoder == "d4pg":
+            encoder_def = D4PGEncoder(cnn_features, cnn_filters, cnn_strides, cnn_padding)
+            # encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups) ###===### ###---###
+        elif encoder == "impala":
+            encoder_def = ImpalaEncoder(use_multiplicative_cond=use_multiplicative_cond)
+        elif encoder == "resnet":
+            encoder_def = ResNetV2Encoder((2, 2, 2, 2))
+        elif encoder == 'resnet_18_v1':
+            encoder_def = ResNet18(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
+                                   use_multiplicative_cond=use_multiplicative_cond,
+                                   use_spatial_learned_embeddings=use_spatial_learned_embeddings,
+                                   num_spatial_blocks=8)
+        elif encoder == 'resnet_34_v1':
+            encoder_def = ResNet34(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
+                                   use_multiplicative_cond=use_multiplicative_cond,
+                                   use_spatial_learned_embeddings=use_spatial_learned_embeddings,
+                                   num_spatial_blocks=8,)
+            # encoder_defs.append(encoder_def)
 
         if decay_steps is not None:
             actor_lr = optax.cosine_decay_schedule(actor_lr, decay_steps)
         policy_def = UnitStdNormalPolicy(
             hidden_dims, action_dim, dropout_rate=dropout_rate, apply_tanh=False
         )
+        # actor_def = PixelMultiplexerMultiple(
+        #     encoders=encoder_defs,
+        #     network=policy_def,
+        #     latent_dim=latent_dim,
+        #     stop_gradient=share_encoder,
+        # )
         actor_def = PixelMultiplexer(
             encoder=encoder_def,
             network=policy_def,
             latent_dim=latent_dim,
             stop_gradient=share_encoder,
         )
+
         actor_params = actor_def.init(actor_key, observations)["params"]
         actor = TrainState.create(
             apply_fn=actor_def.apply,
@@ -151,9 +184,10 @@ class PixelIQLLearner(Agent):
         )
 
         critic_def = StateActionEnsemble(hidden_dims, num_qs=2)
-        critic_def = PixelMultiplexer(
-            encoder=encoder_def, network=critic_def, latent_dim=latent_dim
+        critic_def = PixelMultiplexerMultiple(
+            encoders=encoder_defs, network=critic_def, latent_dim=latent_dim
         )
+
         critic_params = critic_def.init(critic_key, observations, actions)["params"]
         critic = TrainState.create(
             apply_fn=critic_def.apply,
@@ -163,8 +197,8 @@ class PixelIQLLearner(Agent):
         target_critic_params = copy.deepcopy(critic_params)
 
         value_def = StateValue(hidden_dims)
-        value_def = PixelMultiplexer(
-            encoder=encoder_def,
+        value_def = PixelMultiplexerMultiple(
+            encoders=encoder_defs,
             network=value_def,
             latent_dim=latent_dim,
             stop_gradient=share_encoder,

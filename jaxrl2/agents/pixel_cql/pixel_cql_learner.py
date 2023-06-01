@@ -23,10 +23,11 @@ from jaxrl2.agents.cql.temperature import Temperature
 from jaxrl2.networks.normal_tanh_policy import NormalTanhPolicy
 
 from jaxrl2.data.dataset import DatasetDict
-# from jaxrl2.networks.encoders import D4PGEncoder
-from jaxrl2.networks.encoders import D4PGEncoderGroups ###===### ###---###
+from jaxrl2.networks.encoders import ResNetV2Encoder, ImpalaEncoder
+from jaxrl2.networks.encoders.resnet_encoderv1 import GroupConvWrapper, ResNet18, ResNet34, ResNetSmall, ResNet50
+from jaxrl2.networks.encoders import D4PGEncoder, D4PGEncoderGroups ###===### ###---###
 # from jaxrl2.networks.normal_policy import UnitStdNormalPolicy
-from jaxrl2.networks.pixel_multiplexer import PixelMultiplexer
+from jaxrl2.networks.pixel_multiplexer import PixelMultiplexer, PixelMultiplexerMultiple
 from jaxrl2.networks.values import StateActionEnsemble, StateValue
 from jaxrl2.types import Params, PRNGKey
 from jaxrl2.utils.target_update import soft_target_update
@@ -35,7 +36,7 @@ import os ###===###
 from flax.training import checkpoints
 from glob import glob ###---###
 
-@functools.partial(jax.jit, static_argnames=("critic_reduction", "share_encoder", 'backup_entropy', 'max_q_backup', 'use_sarsa_backups'))
+@functools.partial(jax.jit, static_argnames=("critic_reduction", "share_encoder", 'backup_entropy', 'max_q_backup', 'use_sarsa_backups', 'bound_q_with_mc'))
 def _update_jit(
     rng: PRNGKey,
     actor: TrainState,
@@ -52,6 +53,7 @@ def _update_jit(
     max_q_backup: bool,
     dr3_coefficient: float,
     use_sarsa_backups: bool,
+    bound_q_with_mc: bool,
     share_encoder: bool,
 ) -> Tuple[PRNGKey, TrainState, TrainState, Params, TrainState, Dict[str, float]]:
     batch = _unpack(batch)
@@ -85,7 +87,8 @@ def _update_jit(
                                             cql_alpha=cql_alpha,
                                             max_q_backup=max_q_backup,
                                             dr3_coefficient=dr3_coefficient,
-                                            use_sarsa_backups=use_sarsa_backups)
+                                            use_sarsa_backups=use_sarsa_backups,
+                                            bound_q_with_mc=bound_q_with_mc)
     new_target_critic_params = soft_target_update(new_critic.params,
                                                   target_critic_params, tau)
 
@@ -130,13 +133,23 @@ class PixelCQLLearner(Agent):
         max_q_backup: bool = False,
         dr3_coefficient: float = 0.0,
         use_sarsa_backups: bool = False,
+        bound_q_with_mc: bool = False,
         critic_reduction: str = 'min',
         dropout_rate: Optional[float] = None,
         share_encoder: bool = False,
+        encoder: str = "d4pg",
+        encoder_norm: str = 'batch',
+        use_spatial_softmax=False,
+        softmax_temperature=-1,
+        use_multiplicative_cond=False,
+        use_spatial_learned_embeddings=False,
     ):
         """
         An implementation of the version of Soft-Actor-Critic described in https://arxiv.org/abs/1812.05905
         """
+
+        # assert observations["pixels"].shape[-2] / cnn_groups == 3, f"observations['pixels'].shape: {observations['pixels'].shape}, cnn_groups: {cnn_groups}"
+
 
         action_dim = actions.shape[-1]
 
@@ -153,18 +166,44 @@ class PixelCQLLearner(Agent):
         self.max_q_backup = max_q_backup
         self.dr3_coefficient = dr3_coefficient
         self.use_sarsa_backups = use_sarsa_backups
+        self.bound_q_with_mc = bound_q_with_mc
         self.share_encoder = share_encoder
 
         rng = jax.random.PRNGKey(seed)
         rng, actor_key, critic_key, temp_key = jax.random.split(rng, 4)
 
-        # encoder_def = D4PGEncoder(cnn_features, cnn_filters, cnn_strides, cnn_padding)
-        encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups) ###===### ###---###
+        # encoder_defs = []
+        # for i in range(cnn_groups):
+        if encoder == "d4pg":
+            encoder_def = D4PGEncoder(cnn_features, cnn_filters, cnn_strides, cnn_padding)
+            # encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups) ###===### ###---###
+        elif encoder == "impala":
+            encoder_def = ImpalaEncoder(use_multiplicative_cond=use_multiplicative_cond)
+        elif encoder == "resnet":
+            encoder_def = ResNetV2Encoder((2, 2, 2, 2))
+        elif encoder == 'resnet_18_v1':
+            encoder_def = ResNet18(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
+                                   use_multiplicative_cond=use_multiplicative_cond,
+                                   use_spatial_learned_embeddings=use_spatial_learned_embeddings,
+                                   num_spatial_blocks=8)
+        elif encoder == 'resnet_34_v1':
+            encoder_def = ResNet34(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
+                                   use_multiplicative_cond=use_multiplicative_cond,
+                                   use_spatial_learned_embeddings=use_spatial_learned_embeddings,
+                                   num_spatial_blocks=8,)
+            # encoder_defs.append(encoder_def)
+
 
         if decay_steps is not None:
             actor_lr = optax.cosine_decay_schedule(actor_lr, decay_steps)
         # policy_def = UnitStdNormalPolicy(hidden_dims, action_dim, dropout_rate=dropout_rate, apply_tanh=False)
         policy_def = NormalTanhPolicy(hidden_dims, action_dim)
+        # actor_def = PixelMultiplexerMultiple(
+        #     encoders=encoder_defs,
+        #     network=policy_def,
+        #     latent_dim=latent_dim,
+        #     stop_gradient=share_encoder,
+        # )
         actor_def = PixelMultiplexer(
             encoder=encoder_def,
             network=policy_def,
@@ -180,8 +219,8 @@ class PixelCQLLearner(Agent):
         )
 
         critic_def = StateActionEnsemble(hidden_dims, num_qs=2)
-        critic_def = PixelMultiplexer(
-            encoder=encoder_def, network=critic_def, latent_dim=latent_dim
+        critic_def = PixelMultiplexerMultiple(
+            encoders=encoder_defs, network=critic_def, latent_dim=latent_dim
         )
         critic_params = critic_def.init(critic_key, observations, actions)["params"]
         critic = TrainState.create(
@@ -231,6 +270,7 @@ class PixelCQLLearner(Agent):
             self.max_q_backup,
             self.dr3_coefficient,
             self.use_sarsa_backups,
+            self.bound_q_with_mc,
             self.share_encoder,
         )
 

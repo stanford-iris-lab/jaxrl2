@@ -16,7 +16,8 @@ from jaxrl2.evaluation import evaluate_kitchen
 from jaxrl2.agents.pixel_cql import PixelCQLLearner
 from jaxrl2.agents.pixel_iql import PixelIQLLearner
 from jaxrl2.agents.pixel_bc import PixelBCLearner
-from jaxrl2.agents.cql_encodersep_parallel import PixelCQLLearnerEncoderSepParallel
+from jaxrl2.agents import PixelIDQLLearner, PixelDDPMBCLearner
+from jaxrl2.agents import PixelCQLLearnerEncoderSepParallel
 
 import jaxrl2.wrappers.combo_wrappers as wrappers
 from jaxrl2.wrappers.frame_stack import FrameStack
@@ -26,6 +27,8 @@ import collections
 from jaxrl2.data import MemoryEfficientReplayBuffer
 
 from glob import glob
+
+from flax.core import frozen_dict
 
 tf.config.experimental.set_visible_devices([], "GPU")
 
@@ -47,13 +50,16 @@ flags.DEFINE_integer('eval_episodes', 250,
                      'Number of episodes used for evaluation.')
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 5000, 'Eval interval.')
+flags.DEFINE_integer('online_eval_interval', 5000, 'Eval interval.')
 flags.DEFINE_integer('batch_size', 256, 'Mini batch size.')
 flags.DEFINE_integer('max_gradient_steps', int(5e5), 'Number of training steps.')
 flags.DEFINE_integer('max_online_gradient_steps', int(5e5), 'Number of training steps.')
 flags.DEFINE_boolean('finetune_online', True, 'Save videos during evaluation.')
 flags.DEFINE_boolean('proprio', False, 'Save videos during evaluation.')
-
-
+flags.DEFINE_float("take_top", None, "Take top N% trajectories.")
+flags.DEFINE_float(
+    "filter_threshold", None, "Take trajectories with returns above the threshold."
+)
 flags.DEFINE_boolean('tqdm', False, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
 flags.DEFINE_boolean('debug', False, 'Set to debug params (shorter).')
@@ -71,7 +77,7 @@ def main(_):
 
     config_flags.DEFINE_config_file(
         'config',
-        f'./configs/offline_pixels_config.py:{FLAGS.algorithm}',
+        f'./configs/offline_pixels_diversekitchen_config.py:{FLAGS.algorithm}',
         'File path to the training hyperparameter configuration.',
         lock_config=False)
 
@@ -79,9 +85,10 @@ def main(_):
         FLAGS.project = "trash_results"
         # FLAGS.batch_size = 16
         FLAGS.max_gradient_steps = 500
-        FLAGS.eval_interval = 400
+        FLAGS.eval_interval = 300
+        FLAGS.online_eval_interval = 300
         FLAGS.eval_episodes = 2
-        FLAGS.log_interval = 200
+        FLAGS.log_interval = 400
 
         if FLAGS.max_online_gradient_steps > 0:
             FLAGS.max_online_gradient_steps = 500
@@ -91,14 +98,15 @@ def main(_):
     group_name = f"{FLAGS.task}_{FLAGS.algorithm}_{FLAGS.description}"
     name = f"seed_{FLAGS.seed}"
 
+
     wandb.init(project=FLAGS.project,
-               dir=os.path.join(save_dir, "wandb"),
-               id=group_name + "-" + name,
-               group=group_name,
-               save_code=True,
-               name=name,
-               resume=None,
-               entity="iris_intel")
+              dir=os.path.join(save_dir, "wandb"),
+              id=group_name + "-" + name,
+              group=group_name,
+              save_code=True,
+              name=name,
+              resume=None,
+              entity="iris_intel")
 
     wandb.config.update(FLAGS)
 
@@ -114,9 +122,14 @@ def main(_):
 
     # assert kwargs["cnn_groups"] == 1
     print(globals()[FLAGS.config.model_constructor])
-    agent = globals()[FLAGS.config.model_constructor](
-        FLAGS.seed, env.observation_space.sample(), env.action_space.sample(),
+    if FLAGS.algorithm in ('idql', 'ddpm_bc'):
+        agent = globals()[FLAGS.config.model_constructor].create(
+        FLAGS.seed, env.observation_space, env.action_space,
         **kwargs)
+    else:
+        agent = globals()[FLAGS.config.model_constructor](
+            FLAGS.seed, env.observation_space.sample(), env.action_space.sample(),
+            **kwargs)
     print('Agent created')
 
     print("Loading replay buffer")
@@ -125,6 +138,11 @@ def main(_):
     # replay_buffer_iterator = replay_buffer.get_iterator(sample_args={"batch_size": FLAGS.batch_size, "include_pixels": False})
     # load_data(replay_buffer, FLAGS.datadir, FLAGS.task, FLAGS.ep_length, 3, FLAGS.proprio, debug=FLAGS.debug)
     replay_buffer = env.q_learning_dataset(include_pixels=False, size=FLAGS.replay_buffer_size, debug=FLAGS.debug)
+
+    if FLAGS.take_top is not None or FLAGS.filter_threshold is not None:
+        ds.filter(take_top=FLAGS.take_top, threshold=FLAGS.filter_threshold)
+
+
     print('Replay buffer loaded')
 
     print('Start offline training')
@@ -133,7 +151,27 @@ def main(_):
         tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed}]  (offline)")
         # batch = next(replay_buffer_iterator)
         batch = replay_buffer.sample(FLAGS.batch_size)
-        update_info = agent.update(batch)
+
+        # new_batch = {}
+        # new_batch["actions"] = batch["actions"][None]
+        # new_batch["dones"] = batch["dones"][None]
+        # new_batch["masks"] = batch["masks"][None]
+        # new_batch["rewards"] = batch["rewards"][None]
+        # new_batch["observations"] = {"pixels":None, "states":None}
+        # new_batch["observations"]["pixels"] = batch["observations"]["pixels"][None]
+        # new_batch["observations"]["states"] = batch["observations"]["states"][None]
+        # new_batch["next_observations"] = {"states":None}
+        # new_batch["next_observations"]["states"] = batch["next_observations"]["states"][None]
+        # new_batch = frozen_dict.freeze(new_batch)
+        # out = agent.update(new_batch)
+
+        out = agent.update(batch)
+
+
+        if isinstance(out, tuple):
+            agent, update_info = out
+        else:
+            update_info = out
 
         if i % FLAGS.log_interval == 0:
             for k, v in update_info.items():
@@ -153,6 +191,13 @@ def main(_):
             wandb.log({f"replay_buffer/size": replay_buffer._size}, step=i)
             wandb.log({f"replay_buffer/fullness": replay_buffer._size / replay_buffer._capacity}, step=i)
 
+    eval_info = evaluate_kitchen(agent,
+                         eval_env,
+                         num_episodes=100,
+                         progress_bar=False)
+    for k, v in eval_info.items():
+        wandb.log({f'evaluation/{k}': v}, step=i)
+
     agent.save_checkpoint(os.path.join(save_dir, "offline_checkpoints"), i, -1)
 
     if FLAGS.finetune_online and FLAGS.max_online_gradient_steps > 0:
@@ -162,7 +207,11 @@ def main(_):
         for i in tbar:
             tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed} (online)]")
 
-            action = agent.sample_actions(observation)
+            out = agent.sample_actions(observation)
+            if isinstance(out, tuple):
+                action, agent = out
+            else:
+                action = out
 
             env_step = env.step(action)
             if len(env_step) == 4:
@@ -197,7 +246,15 @@ def main(_):
                 observation, done = env.reset(), False
 
             batch = replay_buffer.sample(FLAGS.batch_size, reinsert_offline=False)
-            update_info = agent.update(batch)
+            if FLAGS.algorithm == "idql":
+                out = agent.update_online(batch)
+            else:
+                out = agent.update(batch)
+
+            if isinstance(out, tuple):
+                agent, update_info = out
+            else:
+                update_info = out
 
             if i % FLAGS.log_interval == 0:
                 for k, v in update_info.items():
@@ -205,7 +262,7 @@ def main(_):
                         wandb.log({f'training/{k}': v}, step=i + FLAGS.max_gradient_steps)
                         # print(k, v)
 
-            if i % FLAGS.eval_interval == 0:
+            if i % FLAGS.online_eval_interval == 0:
                 eval_info = evaluate_kitchen(agent,
                                      eval_env,
                                      num_episodes=FLAGS.eval_episodes,
@@ -307,23 +364,43 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
 export MUJOCO_GL="egl"
 export KITCHEN_DATASETS=/iris/u/khatch/vd5rl/datasets/diversekitchen
 
+
+
 XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_diversekitchen.py \
---task "diversekitchen_outofdistribution-play_data" \
+--task "diversekitchen_indistribution-expert_demos" \
 --tqdm=true \
---project vd5rl_kitchen \
---algorithm cql \
+--project dev \
+--algorithm bc \
 --proprio=true \
---description default \
---eval_episodes 1 \
---eval_interval 200 \
---max_gradient_steps 10_000 \
---replay_buffer_size 600_000 \
+--description proprio \
+--eval_episodes 100 \
+--eval_interval 50000 \
+--online_eval_interval 50000 \
+--log_interval 1000 \
+--max_gradient_steps 500_000 \
+--finetune_online=false \
+--max_online_gradient_steps 500_000 \
+--replay_buffer_size 400_000 \
+--batch_size 128 \
 --seed 0 \
 --debug=true
 
 
---task "diversekitchen_indistribution-play+expert" \
-
-
-
+XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_diversekitchen.py \
+--task "diversekitchen_indistribution-expert_demos" \
+--tqdm=true \
+--project dev \
+--algorithm calql \
+--proprio=true \
+--description proprio \
+--eval_episodes 100 \
+--eval_interval 50000 \
+--online_eval_interval 50000 \
+--log_interval 1000 \
+--max_gradient_steps 500_000 \
+--max_online_gradient_steps 500_000 \
+--replay_buffer_size 400_000 \
+--batch_size 128 \
+--seed 0 \
+--debug=true
 """

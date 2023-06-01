@@ -84,7 +84,7 @@ class ImpalaEncoder(nn.Module):
 
         conv_out = nn.relu(conv_out)
         return conv_out.reshape((*x.shape[:-3], -1))
-    
+
 
 class BiggerImpalaEncoder(nn.Module):
     nn_scale: int = 1
@@ -125,8 +125,8 @@ class BiggerImpalaEncoder(nn.Module):
 
         conv_out = nn.relu(conv_out)
         return conv_out.reshape((*x.shape[:-3], -1))
-    
-    
+
+
 class BiggestImpalaEncoder(nn.Module):
     nn_scale: int = 1
     use_multiplicative_cond: bool = False

@@ -134,3 +134,4 @@ jupyter_notebooks/
 examples/scratch.py
 examples/scripts*
 examples/count_transitions.py
+examples/results*

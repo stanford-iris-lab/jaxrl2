@@ -17,7 +17,11 @@ def evaluate(agent, env: gym.Env, num_episodes: int, progress_bar=False) -> Dict
     ###---###
         observation, done = env.reset(), False
         while not done:
-            action = agent.eval_actions(observation)
+            out = agent.eval_actions(observation)
+            if isinstance(out, tuple):
+                action, agent = out
+            else:
+                action = out
             observation, _, done, _ = env.step(action)
 
     return {
@@ -41,7 +45,12 @@ def evaluate_adroit(agent, env: gym.Env, num_episodes: int, progress_bar=False) 
     ###---###
         observation, done = env.reset(), False
         while not done:
-            action = agent.eval_actions(observation)
+            # action = agent.eval_actions(observation)
+            out = agent.eval_actions(observation)
+            if isinstance(out, tuple):
+                action, agent = out
+            else:
+                action = out
             observation, _, done, _ = env.step(action)
 
     successes = (np.array(env.return_queue) > 0).astype(np.float32)
@@ -77,7 +86,12 @@ def evaluate_kitchen(agent, env: gym.Env, num_episodes: int, progress_bar=False)
 
         observation, done = env.reset(), False
         while not done:
-            action = agent.eval_actions(observation)
+            # action = agent.eval_actions(observation)
+            out = agent.eval_actions(observation)
+            if isinstance(out, tuple):
+                action, agent = out
+            else:
+                action = out
             env_step = env.step(action)
             if len(env_step) == 4:
                 observation, _, done, info = env_step
@@ -94,7 +108,7 @@ def evaluate_kitchen(agent, env: gym.Env, num_episodes: int, progress_bar=False)
         for key, val in objects_maniplated.items():
             objects_maniplated_queue[key].append(np.sum(val) > 0)
             total += np.sum(val) > 0
-        objects_maniplated_queue["total"] = total
+        objects_maniplated_queue["total"].append(total)
 
     successes = [ep_return > 0 for ep_return in env.return_queue]
     return_info = {
