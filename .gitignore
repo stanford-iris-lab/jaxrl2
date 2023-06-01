@@ -132,4 +132,5 @@ dmypy.json
 .remote-sync.json
 jupyter_notebooks/
 examples/scratch.py
-examples/scripts
+examples/scripts*
+examples/count_transitions.py

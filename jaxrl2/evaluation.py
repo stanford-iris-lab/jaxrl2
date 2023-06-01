@@ -32,6 +32,38 @@ def evaluate(agent, env: gym.Env, num_episodes: int, progress_bar=False) -> Dict
     }
 
 ###===###
+def evaluate_adroit(agent, env: gym.Env, num_episodes: int, progress_bar=False) -> Dict[str, float]: ###===### ###---###
+    env = gym.wrappers.RecordEpisodeStatistics(env, deque_size=num_episodes)
+    ###===###
+    # for _ in range(num_episodes):
+    tbar = trange(num_episodes) if progress_bar else range(num_episodes)
+    for _ in tbar:
+    ###---###
+        observation, done = env.reset(), False
+        while not done:
+            action = agent.eval_actions(observation)
+            observation, _, done, _ = env.step(action)
+
+    successes = (np.array(env.return_queue) > 0).astype(np.float32)
+
+    return {
+        'return_mean': np.mean(env.return_queue),
+        'return_max': np.max(env.return_queue),
+        'return_min': np.min(env.return_queue),
+        'return_std': np.std(env.return_queue),
+
+        'success_mean': np.mean(successes),
+        'success_max': np.max(successes),
+        'success_min': np.min(successes),
+        'success_std': np.std(successes),
+
+        'length_mean': np.mean(env.length_queue),
+        'length_max': np.max(env.length_queue),
+        'length_min': np.min(env.length_queue),
+        'length_std': np.std(env.length_queue)
+    }
+
+
 def evaluate_kitchen(agent, env: gym.Env, num_episodes: int, progress_bar=False) -> Dict[str, float]: ###===### ###---###
     env = gym.wrappers.RecordEpisodeStatistics(env, deque_size=num_episodes)
     ###===###
