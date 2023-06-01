@@ -177,6 +177,8 @@ class PixelDDPMBCLearner(Agent):
             #     latent_dim=latent_dim,
             # )
 
+            print("encoder_cls:", encoder_cls)
+
             actor_cls = PixelMultiplexer(
                 encoder_cls=encoder_cls,
                 network_cls=actor_cls,

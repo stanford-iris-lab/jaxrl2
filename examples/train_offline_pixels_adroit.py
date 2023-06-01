@@ -155,7 +155,7 @@ def main(_):
 
     eval_info = evaluate_adroit(agent,
                          eval_env,
-                         num_episodes=100,
+                         num_episodes=2 if FLAGS.debug else 100,
                          progress_bar=False)
     for k, v in eval_info.items():
         wandb.log({f'evaluation/{k}': v}, step=i)

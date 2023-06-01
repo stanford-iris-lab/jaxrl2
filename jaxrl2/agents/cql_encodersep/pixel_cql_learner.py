@@ -33,7 +33,8 @@ from jaxrl2.types import Params, PRNGKey
 from jaxrl2.agents.agent import Agent
 from jaxrl2.networks.learned_std_normal_policy import LearnedStdNormalPolicy, LearnedStdTanhNormalPolicy
 from jaxrl2.agents.drq.augmentations import batched_random_crop, color_transform
-from jaxrl2.agents.common import _unpack
+# from jaxrl2.agents.common import _unpack
+from jaxrl2.agents.drq.drq_learner import _unpack
 from jaxrl2.agents.drq.drq_learner import _share_encoder
 from jaxrl2.networks.encoders.networks import Encoder, PixelMultiplexer, PixelMultiplexerEncoder, PixelMultiplexerDecoder
 from jaxrl2.networks.encoders.impala_encoder import ImpalaEncoder
@@ -60,13 +61,16 @@ class TrainState(train_state.TrainState):
 @functools.partial(jax.jit, static_argnames=['critic_reduction', 'backup_entropy', 'max_q_backup', 'method', 'method_type', 'cross_norm', 'color_jitter', 'tr_penalty_coefficient', 'mc_penalty_coefficient', 'bound_q_with_mc', 'online_bound_nstep_return'])
 def _update_jit(
     rng: PRNGKey, actor: TrainState, critic_encoder: TrainState,
-    critic_decoder: TrainState, target_critic_encoder_params: Params, 
+    critic_decoder: TrainState, target_critic_encoder_params: Params,
     target_critic_decoder_params: Params, temp: TrainState, batch: TrainState,
     discount: float, tau: float, target_entropy: float, backup_entropy: bool,
     critic_reduction: str, cql_alpha: float, max_q_backup: bool, dr3_coefficient: float,tr_penalty_coefficient:float, mc_penalty_coefficient:float, pretrained_critic_encoder: TrainState,
-    method:bool = False, method_const:float = 0.0, method_type:int=0, 
+    method:bool = False, method_const:float = 0.0, method_type:int=0,
     cross_norm:bool = False, color_jitter:bool = False, bound_q_with_mc:bool = False, online_bound_nstep_return:int=-1
     ) -> Tuple[PRNGKey, TrainState, TrainState, Params, TrainState, Dict[str,float]]:
+
+    # Comment out when using the naive replay buffer
+    batch = _unpack(batch)
 
     aug_pixels = batch['observations']['pixels']
     aug_next_pixels = batch['next_observations']['pixels']
@@ -184,7 +188,7 @@ class PixelCQLLearnerEncoderSep(Agent):
                  **kwargs,
         ):
         print('Unused', kwargs)
-        
+
         self.color_jitter=color_jitter
 
         action_dim = actions.shape[-1]
@@ -241,7 +245,7 @@ class PixelCQLLearnerEncoderSep(Agent):
             encoder_def = mae.MAEEncoder()
         else:
             raise ValueError('encoder type not found!')
-        
+
         if policy_encoder_type == 'small':
             policy_encoder_def = Encoder(cnn_features, cnn_strides, cnn_padding)
         elif policy_encoder_type == 'impala':
@@ -276,13 +280,13 @@ class PixelCQLLearnerEncoderSep(Agent):
                                      latent_dim=latent_dim,
                                      stop_gradient=share_encoders or freeze_encoders_actor,
                                      use_bottleneck=use_bottleneck)
-        
-        
+
+
         actor_def_init = actor_def.init({'params': actor_key, 'noise':noise1_key, 'drop_path':drop1_key}, observations)
         actor_params = actor_def_init['params']
         if policy_encoder_type == 'mae':
             actor_params = loading_utils.load_pytorch_weights(mae_type, actor_params)
-            
+
         actor_batch_stats = actor_def_init['batch_stats'] if 'batch_stats' in actor_def_init else None
         actor = TrainState.create(apply_fn=actor_def.apply,
                                   params=actor_params,
@@ -292,21 +296,21 @@ class PixelCQLLearnerEncoderSep(Agent):
         network_def = StateActionEnsemble(hidden_dims, num_qs=2)
         critic_def_encoder = PixelMultiplexerEncoder(encoder=encoder_def,latent_dim=latent_dim, use_bottleneck=use_bottleneck, stop_gradient=freeze_encoders_critic)
         critic_def_decoder = PixelMultiplexerDecoder(network=network_def)
-        
+
         critic_key_encoder, critic_key_decoder = jax.random.split(critic_key, 2)
-        
+
         critic_def_encoder_init = critic_def_encoder.init({'params': critic_key_encoder, 'noise':noise2_key, 'drop_path':drop2_key}, observations)
         critic_encoder_params = critic_def_encoder_init['params']
         if encoder_type == 'mae':
             critic_encoder_params = loading_utils.load_pytorch_weights(mae_type, critic_encoder_params)
-        
+
         critic_encoder_batch_stats = critic_def_encoder_init['batch_stats'] if 'batch_stats' in critic_def_encoder_init else None
-        
+
         if 'batch_stats' in critic_def_encoder_init:
             embed_obs, _ = critic_def_encoder.apply({'params': critic_encoder_params, 'batch_stats': critic_def_encoder_init['batch_stats']}, observations, mutable=['batch_stats'], rngs={'noise':noise3_key, 'drop_path':drop3_key})
         else:
             embed_obs = critic_def_encoder.apply({'params': critic_encoder_params}, observations, rngs={'noise':noise3_key, 'drop_path':drop3_key})
-        
+
         critic_def_decoder_init = critic_def_decoder.init(critic_key_decoder, embed_obs, actions)
         critic_decoder_params = critic_def_decoder_init['params']
         critic_decoder_batch_stats = critic_def_decoder_init['batch_stats'] if 'batch_stats' in critic_def_decoder_init else None
@@ -315,7 +319,7 @@ class PixelCQLLearnerEncoderSep(Agent):
                                 params=critic_encoder_params,
                                 batch_stats=critic_encoder_batch_stats,
                                 tx=optax.adam(learning_rate=critic_lr))
-        
+
         critic_decoder = TrainState.create(apply_fn=critic_def_decoder.apply,
                                 params=critic_decoder_params,
                                 batch_stats=critic_decoder_batch_stats,
@@ -342,12 +346,12 @@ class PixelCQLLearnerEncoderSep(Agent):
         self._critic_encoder = critic_encoder
         self._critic_decoder = critic_decoder
         self._critic = (critic_encoder, critic_decoder)
-        
+
         self._temp = temp
         self._target_critic_encoder_params = target_critic_encoder_params
         self._target_critic_decoder_params = target_critic_decoder_params
         self._target_critic_params = (target_critic_encoder_params, target_critic_decoder_params)
-        
+
         self._cql_alpha = cql_alpha
         print ('Discount: ', self.discount)
         print ('CQL Alpha: ', self._cql_alpha)
@@ -358,17 +362,17 @@ class PixelCQLLearnerEncoderSep(Agent):
 
     def update(self, batch: FrozenDict, i=-1) -> Dict[str, float]:
         new_rng, new_actor, new_critic, new_target_critic_params, new_temp, info = _update_jit(
-            self._rng, self._actor, self._critic_encoder, self._critic_decoder, 
+            self._rng, self._actor, self._critic_encoder, self._critic_decoder,
             self._target_critic_encoder_params, self._target_critic_decoder_params,
             self._temp, batch, self.discount, self.tau, self.target_entropy,
             self.backup_entropy, self.critic_reduction, self._cql_alpha, self.max_q_backup,
-            self.dr3_coefficient, tr_penalty_coefficient=self.tr_penalty_coefficient, mc_penalty_coefficient=self.mc_penalty_coefficient, pretrained_critic_encoder=self._pretrained_critic_encoder,color_jitter=self.color_jitter, 
+            self.dr3_coefficient, tr_penalty_coefficient=self.tr_penalty_coefficient, mc_penalty_coefficient=self.mc_penalty_coefficient, pretrained_critic_encoder=self._pretrained_critic_encoder,color_jitter=self.color_jitter,
             method=self.method, method_const=self.method_const,
             method_type=self.method_type, cross_norm=self.cross_norm, bound_q_with_mc=self.bound_q_with_mc, online_bound_nstep_return=self.online_bound_nstep_return)
-        
+
         new_critic_encoder, new_critic_decoder = new_critic
         new_target_critic_encoder_params, new_target_critic_decoder_params = new_target_critic_params
-        
+
         self._rng = new_rng
         if self.wait_actor_update > 0 and i >= 0 and i <= self.wait_actor_update:
             pass
@@ -377,11 +381,11 @@ class PixelCQLLearnerEncoderSep(Agent):
         self._critic_encoder = new_critic_encoder
         self._critic_decoder = new_critic_decoder
         self._critic = (new_critic_encoder, new_critic_decoder)
-        
+
         self._target_critic_encoder_params = new_target_critic_encoder_params
         self._target_critic_decoder_params = new_target_critic_decoder_params
         self._target_critic_params = (new_target_critic_encoder_params, new_target_critic_decoder_params)
-        
+
         self._temp = new_temp
 
         return info
@@ -414,7 +418,7 @@ class PixelCQLLearnerEncoderSep(Agent):
             target_q_pred = []
             bellman_loss = []
             task_ids = []
-            
+
             # Do the frame stacking thing for observations
             # images = np.lib.stride_tricks.sliding_window_view(observations.pop('pixels'), num_stack + 1, axis=0)
 
@@ -427,12 +431,12 @@ class PixelCQLLearnerEncoderSep(Agent):
                 for k, v in observations.items():
                     if 'pixels' not in k:
                         obs_dict[k] = v[t][None]
-                    
+
                 next_obs_dict = {'pixels': next_obs_pixels[None]}
                 for k, v in next_observations.items():
                     if 'pixels' not in k:
                         next_obs_dict[k] = v[t][None]
-                
+
                 q_value = get_q_value(action, obs_dict, self._critic_encoder, self._critic_decoder)
                 next_action = get_action(next_obs_dict, self._actor)
                 target_q_value = get_q_value(next_action, next_obs_dict, target_critic_encoder, target_critic_decoder)
@@ -442,7 +446,7 @@ class PixelCQLLearnerEncoderSep(Agent):
                 bellman_loss.append(((q_value-target_q_value)**2).mean().item())
                 if 'task_id' in observations.keys():
                     task_ids.append(np.argmax(observations['task_id']))
-            
+
             # print ('lengths for verification: ', len(task_ids), len(q_pred), len(masks), len(bellman_loss))
 
             traj_images.append(make_visual(q_pred, rewards, observations['pixels'], masks, target_q_pred, bellman_loss, task_ids))
@@ -493,26 +497,26 @@ class PixelCQLLearnerEncoderSep(Agent):
             self._target_critic_decoder_params = flax.core.frozen_dict.freeze(target_decoder_params)
             self._target_critic_params = (self._target_critic_encoder_params, self._target_critic_decoder_params)
             print("rescaled critic last layer:", rescale_critic_last_layer_ratio)
-            
+
 
         elif reset_critic == 'decoder':
             print("initializing critic decoder")
             self._critic_encoder, _ = output_dict['critic']
             self._critic=(self._critic_encoder, self._critic_decoder)
             self._target_critic_encoder_params, _ = output_dict['target_critic_params']
-            self._target_critic_params = (self._target_critic_encoder_params, self._target_critic_decoder_params)   
+            self._target_critic_params = (self._target_critic_encoder_params, self._target_critic_decoder_params)
         elif reset_critic == 'whole':
             print("initializing whole critic")
-            pass 
-    
+            pass
 
-            
+
+
         print('restored from ', dir)
 
         if self.tr_penalty_coefficient != 0:
             print("restored pretrained critic encoder for calculating trust region penalty")
             self._pretrained_critic_encoder, _ = copy.deepcopy(output_dict['critic'])
-    
+
     def load_encoder(self, pretrained_file, encoder_key):
         if pretrained_file.endswith('.pkl'):
             with open(pretrained_file, 'rb') as f:
@@ -545,7 +549,7 @@ class PixelCQLLearnerEncoderSep(Agent):
         assert(trees_equal(self._critic_encoder.params['encoder']['encoder'], freeze(pretrained_params))), 'Parameters not updated'
 
     def apply_adamw(self):
-        encoder_decay_mask = get_weight_decay_mask(params=self._critic_encoder.params, no_decay_list=self.encoder_no_decay_list)   
+        encoder_decay_mask = get_weight_decay_mask(params=self._critic_encoder.params, no_decay_list=self.encoder_no_decay_list)
         self._critic_encoder = TrainState.create(apply_fn=self._critic_encoder.apply_fn,
                     params=flax.core.frozen_dict.unfreeze(self._critic_encoder.params),
                     batch_stats=self._critic_encoder.batch_stats,
@@ -555,7 +559,7 @@ class PixelCQLLearnerEncoderSep(Agent):
                     mask=encoder_decay_mask
                     ))
 
-        decoder_decay_mask = get_weight_decay_mask(params=self._critic_decoder.params, no_decay_list=self.decoder_no_decay_list)   
+        decoder_decay_mask = get_weight_decay_mask(params=self._critic_decoder.params, no_decay_list=self.decoder_no_decay_list)
         self._critic_decoder = TrainState.create(apply_fn=self._critic_decoder.apply_fn,
                                 params=flax.core.frozen_dict.unfreeze(self._critic_decoder.params),
                                 batch_stats=self._critic_decoder.batch_stats,
@@ -592,14 +596,14 @@ def get_action(obs_dict, actor):
 def get_q_value(actions, obs_dict, critic_encoder, critic_decoder):
     if critic_encoder.batch_stats is not None:
         embed_obs, _ = critic_encoder.apply_fn({'params': critic_encoder.params, 'batch_stats': critic_encoder.batch_stats}, obs_dict, mutable=['batch_stats'])
-    else:    
+    else:
         embed_obs = critic_encoder.apply_fn({'params': critic_encoder.params}, obs_dict)
-        
+
     if critic_decoder.batch_stats is not None:
         q_pred, _ = critic_decoder.apply_fn({'params': critic_decoder.params, 'batch_stats': critic_decoder.batch_stats}, embed_obs, actions, mutable=['batch_stats'])
-    else:    
+    else:
         q_pred = critic_decoder.apply_fn({'params': critic_decoder.params}, embed_obs, actions)
-        
+
     return q_pred
 
 def np_unstack(array, axis):
@@ -626,27 +630,27 @@ def make_visual(q_estimates, rewards, images, masks, target_q_pred, bellman_loss
     sel_images = np.concatenate(np_unstack(sel_images, 0), 1)
 
     axs[0].imshow(sel_images)
-    
+
     axs[1].plot(q_estimates_np[:, 0], linestyle='--', marker='o')
     axs[1].plot(q_estimates_np[:, 1], linestyle='--', marker='o')
     axs[1].set_ylabel('q values')
-    
+
     axs[2].plot(target_q_pred, linestyle='--', marker='o')
     axs[2].set_ylabel('target_q_pred')
     axs[2].set_xlim([0, len(target_q_pred)])
-    
+
     axs[3].plot(bellman_loss, linestyle='--', marker='o')
     axs[3].set_ylabel('bellman_loss')
     axs[3].set_xlim([0, len(bellman_loss)])
-    
+
     axs[4].plot(rewards, linestyle='--', marker='o')
     axs[4].set_ylabel('rewards')
     axs[4].set_xlim([0, len(rewards)])
-    
+
     axs[5].plot(masks, linestyle='--', marker='o')
     axs[5].set_ylabel('masks')
     axs[5].set_xlim([0, len(masks)])
-    
+
     axs[6].plot(task_ids, linestyle='--', marker='o')
     axs[6].set_ylabel('task_ids')
     axs[6].set_xlim([0, len(masks)])

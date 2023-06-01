@@ -18,6 +18,7 @@ from jaxrl2.agents.pixel_iql import PixelIQLLearner
 from jaxrl2.agents.pixel_bc import PixelBCLearner
 from jaxrl2.agents import PixelIDQLLearner, PixelDDPMBCLearner
 from jaxrl2.agents import PixelCQLLearnerEncoderSepParallel
+from jaxrl2.agents import PixelCQLLearnerEncoderSep
 
 import jaxrl2.wrappers.combo_wrappers as wrappers
 from jaxrl2.wrappers.frame_stack import FrameStack
@@ -127,6 +128,8 @@ def main(_):
         FLAGS.seed, env.observation_space, env.action_space,
         **kwargs)
     else:
+        obs = env.observation_space.sample()
+
         agent = globals()[FLAGS.config.model_constructor](
             FLAGS.seed, env.observation_space.sample(), env.action_space.sample(),
             **kwargs)
@@ -193,7 +196,7 @@ def main(_):
 
     eval_info = evaluate_kitchen(agent,
                          eval_env,
-                         num_episodes=100,
+                         num_episodes=2 if FLAGS.debug else 100,
                          progress_bar=False)
     for k, v in eval_info.items():
         wandb.log({f'evaluation/{k}': v}, step=i)
@@ -389,8 +392,8 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_diversekitch
 XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_diversekitchen.py \
 --task "diversekitchen_indistribution-expert_demos" \
 --tqdm=true \
---project dev \
---algorithm calql \
+--project trash_results \
+--algorithm ddpm_bc \
 --proprio=true \
 --description proprio \
 --eval_episodes 100 \

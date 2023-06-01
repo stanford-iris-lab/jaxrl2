@@ -75,7 +75,7 @@ def get_iql_config():
 
     return config
 
-def get_cql_config():
+def get_cql_slow_config():
     config = ml_collections.ConfigDict()
 
     # config.encoder = "d4pg"
@@ -124,7 +124,7 @@ def get_cql_config():
 
     return config
 
-def get_calql_config():
+def get_cql_config():
     config = ml_collections.ConfigDict()
 
     # config.encoder = "d4pg"
@@ -170,6 +170,9 @@ def get_calql_config():
     config.critic_reduction = "min"
     config.share_encoders = False
     config.freeze_encoders = False
+
+    config.bound_q_with_mc = False
+    config.adam_weight_decay = -1
 
     return config
 
@@ -222,11 +225,11 @@ def get_config(config_string):
         "iql": ml_collections.ConfigDict(
             {"model_constructor": "PixelIQLLearner", "model_config": get_iql_config()}
         ),
-        "cql": ml_collections.ConfigDict(
+        "cql_slow": ml_collections.ConfigDict(
             {"model_constructor": "PixelCQLLearner", "model_config": get_cql_config()}
         ),
-        "calql": ml_collections.ConfigDict(
-            {"model_constructor": "PixelCQLLearnerEncoderSepParallel", "model_config": get_calql_config()}
+        "cql": ml_collections.ConfigDict(
+            {"model_constructor": "PixelCQLLearnerEncoderSep", "model_config": get_cql_config()}
         ),
         "ddpm_bc": ml_collections.ConfigDict(
             {"model_constructor": "PixelDDPMBCLearner", "model_config": get_ddpm_bc_config()}
