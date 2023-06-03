@@ -25,14 +25,14 @@ datasets=(sorting pickplace sorting_pickplace)
 for alpha in ${alphas[@]}; do
 for dataset in ${datasets[@]}; do
 
-prefix=${proj_name}_${dataset}_cql_alpha_${cql_alpha}_dataset_${dataset}_seed_${seed}
+prefix=${proj_name}_${dataset}_cql_alpha_${alpha}_dataset_${dataset}_seed_${seed}
 which_gpu=${which_devices[$gpu_id]}
 export CUDA_VISIBLE_DEVICES=$which_gpu
 echo "Running on GPU $which_gpu"
 
 command="XLA_PYTHON_CLIENT_PREALLOCATE=false python3 examples/launch_train_widowx_cql.py \
 --prefix $prefix \
---cql_alpha $cql_alpha \
+--cql_alpha $alpha \
 --wandb_project ${proj_name} \
 --batch_size 64 \
 --encoder_type small  \
