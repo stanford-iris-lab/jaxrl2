@@ -348,42 +348,47 @@ def run_multiple_trajs(variant, agent, env, num_trajs, deterministic=True):
         'rewards': np.array([step['reward'] for step in traj])
     }
 
-def collect_traj(variant, agent, env, deterministic, traj_id=None):
+def collect_traj(variant, agent, env, deterministic, traj_id=None, max_len_eval=500):
     obs, done = env.reset(), False
     traj = []
 
     print('collect traj deterministc', deterministic)
-    while not done:
-        if hasattr(variant, 'eval_task_id'):
-            if variant.eval_task_id != -1:
-                obs['task_id'] = np.zeros(variant.num_tasks, np.float32)[None]
-                obs['task_id'][:, variant.eval_task_id] = 1.
-        if variant.from_states:
-            obs_filtered = copy.deepcopy(obs)
-            if 'pixels' in obs_filtered:
-                obs_filtered.pop('pixels')
-        else:
-            obs_filtered = obs
+    num_steps = 0
+    with tqdm(total=max_len_eval) as pbar:
+        while not done and num_steps < max_len_eval:
+            if hasattr(variant, 'eval_task_id'):
+                if variant.eval_task_id != -1:
+                    obs['task_id'] = np.zeros(variant.num_tasks, np.float32)[None]
+                    obs['task_id'][:, variant.eval_task_id] = 1.
+            if variant.from_states:
+                obs_filtered = copy.deepcopy(obs)
+                if 'pixels' in obs_filtered:
+                    obs_filtered.pop('pixels')
+            else:
+                obs_filtered = obs
 
-        if deterministic:
-            action = agent.eval_actions(obs_filtered).squeeze()
-        else:
-            action = agent.sample_actions(obs_filtered).squeeze()
-        next_obs, reward, done, info = env.step(action)
+            if deterministic:
+                action = agent.eval_actions(obs_filtered).squeeze()
+            else:
+                action = agent.sample_actions(obs_filtered).squeeze()
+            next_obs, reward, done, info = env.step(action)
 
-        if hasattr(variant, 'eval_task_id'):
-            if variant.eval_task_id != -1:
-                next_obs['task_id'] = obs['task_id']
+            if hasattr(variant, 'eval_task_id'):
+                if variant.eval_task_id != -1:
+                    next_obs['task_id'] = obs['task_id']
 
-        traj.append({
-            'observation': obs,
-            'action': action,
-            'reward': reward,
-            'next_observation': next_obs,
-            'done': done,
-            'info': info
-        })
-        obs = next_obs
+            traj.append({
+                'observation': obs,
+                'action': action,
+                'reward': reward,
+                'next_observation': next_obs,
+                'done': done,
+                'info': info
+            })
+            obs = next_obs
+            
+            pbar.update(1)
+            num_steps += 1
     return traj
 
 
