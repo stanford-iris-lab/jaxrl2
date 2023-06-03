@@ -86,8 +86,18 @@ def append_dicts(dict1, dict2):
             dict1[k] = np.concatenate([dict1[k], dict2[k]], axis=0)
     return dict1
 
+def append_all_dicts(dict_list):
+    first_dict = dict_list[0]
+    return_dict = {}
+    for k in first_dict.keys():
+        if is_dict_like(first_dict[k]):
+            return_dict[k] = append_all_dicts([x[k] for x in dict_list])
+        else:
+            return_dict[k] = np.concatenate([x[k] for x in dict_list], axis=0)
+    return return_dict
 
-def append_nested_dict(
+
+def reformat_nested_dict(
     concat_dict, addition, remapping={}, obs_remapping={}, add_framestack_dim=True
 ):
     # convert addition to correct format
@@ -121,9 +131,7 @@ def append_nested_dict(
         for k, v in new_format_dict["next_observations"].items():
             new_format_dict["next_observations"][k] = v[..., None]
 
-    if not concat_dict:
-        return new_format_dict
-    return append_dicts(concat_dict, new_format_dict)
+    return new_format_dict
 
 
 class EpisodicTransitionDataset(Dataset):
@@ -140,6 +148,7 @@ class EpisodicTransitionDataset(Dataset):
 
         self._paths = paths
         self.episodes = []
+        new_format_dicts = []
         self.episode_as_dict = None
 
         self.episodes_lens = []
@@ -160,17 +169,20 @@ class EpisodicTransitionDataset(Dataset):
                 succ.append(rews.any())
                 self.episodes_lens.append(len(rews))
 
-                self.episode_as_dict = append_nested_dict(
+                new_format_dict = reformat_nested_dict(
                     self.episode_as_dict,
                     data[i],
                     remapping=remapping,
                     obs_remapping=obs_remapping,
                     add_framestack_dim=add_framestack_dim,
                 )
+                new_format_dicts.append(new_format_dict)
 
             print("Success rate:", np.mean(succ))
-            gc.collect()
 
+        gc.collect()
+        
+        self.episode_as_dict = append_all_dicts(new_format_dicts)
         self.episodes_lens = np.array(self.episodes_lens)
         self.episodes = np.array(self.episodes)
         super().__init__(self.episode_as_dict)
@@ -201,7 +213,7 @@ class EpisodicTransitionDataset(Dataset):
 
 
 def main():
-    path = "/nfs/kun2/users/asap7772/binsort_bridge/test/actionnoise0.0_binnoise0.0_policysorting_sparse0/train/out.npy"
+    path = "/nfs/kun2/users/asap7772/binsort_bridge/04_26_collect_multitask/actionnoise0.0_binnoise0.0_policypickplace_sparse0/train/out.npy"
     dataset = EpisodicTransitionDataset(path)
     batch = dataset.sample(13)
     print(jax.tree_util.tree_map(lambda x: x.shape, batch))
