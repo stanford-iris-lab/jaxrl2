@@ -110,7 +110,7 @@ if __name__ == '__main__':
     parser.add_argument('--override_critic_lr', default=-1.0, help='online pos neg ratio schedule _ratio', type=float)
     parser.add_argument('--rescale_critic_last_layer_ratio', default=-1, help='rescale_critic_last_layer_ratio', type=float)
     parser.add_argument('--wait_actor_update', default=-1, help='wait actor update', type=int)
-    parser.add_argument('--bound_q_with_mc', action='store_true', help='target_q = max(MC, target_q)')
+    parser.add_argument('--bound_q_with_mc', default=0, help='wait actor update', type=int)
     parser.add_argument('--num_online_gradsteps_batch', default=-1, help='take a certain gradstep in batch setting', type=int)
     parser.add_argument('--keep_mc_bound_online', action='store_true', help='keep mc bound in online phase or not')
     parser.add_argument('--online_bound_nstep_return', default=-1, help='use Nstep return instead of MC return to go for lowerbound during online finetuning', type=int)

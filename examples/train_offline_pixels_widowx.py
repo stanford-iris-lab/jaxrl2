@@ -13,6 +13,7 @@ import numpy as np
 
 from jaxrl2.utils.wandb_logger import WandBLogger, create_exp_name
 from jaxrl2.data.widowx_configs import *
+from jaxrl2.widowx_env_wrapper.widowx_wrapped import get_gym_binsort
 
 from examples.train_utils_sim import (
     offline_training_loop,
@@ -48,7 +49,7 @@ def main(variant):
         group_name=group_name,
     )
 
-    env = DummyEnv()
+    env = get_gym_binsort()
 
     sample_obs = add_batch_dim(env.observation_space.sample())
     sample_action = add_batch_dim(env.action_space.sample())
@@ -100,5 +101,5 @@ def main(variant):
             replay_buffer,
             None,
             wandb_logger,
-            perform_control_evals=False,
+            perform_control_evals=True,
         )
