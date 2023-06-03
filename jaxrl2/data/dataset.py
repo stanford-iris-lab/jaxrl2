@@ -1,43 +1,54 @@
 from typing import Dict, Iterable, Optional, Tuple, Union
-
+import collections
+import jax
 import numpy as np
-from flax.core import frozen_dict
 from gym.utils import seeding
-
+import jax.numpy as jnp
 from jaxrl2.types import DataType
 
 DatasetDict = Dict[str, DataType]
+from flax.core import frozen_dict
 
+def concat_recursive(batches):
+    new_batch = {}
+    for k, v in batches[0].items():
+        if isinstance(v, frozen_dict.FrozenDict):
+            new_batch[k] = concat_recursive([batches[0][k], batches[1][k]])
+        else:
+            new_batch[k] = np.concatenate([b[k] for b in batches], 0)
+    return new_batch
 
-def _check_lengths(dataset_dict: DatasetDict, dataset_len: Optional[int] = None) -> int:
+def _check_lengths(dataset_dict: DatasetDict,
+                   dataset_len: Optional[int] = None) -> int:
     for v in dataset_dict.values():
         if isinstance(v, dict):
             dataset_len = dataset_len or _check_lengths(v, dataset_len)
         elif isinstance(v, np.ndarray):
             item_len = len(v)
             dataset_len = dataset_len or item_len
-            assert dataset_len == item_len, "Inconsistent item lengths in the dataset."
+            assert dataset_len == item_len, 'Inconsistent item lengths in the dataset.'
         else:
-            raise TypeError("Unsupported type.")
+            raise TypeError('Unsupported type.')
     return dataset_len
 
 
-def _subselect(dataset_dict: DatasetDict, index: np.ndarray) -> DatasetDict:
-    new_dataset_dict = {}
+def _split(dataset_dict: DatasetDict,
+           index: int) -> Tuple[DatasetDict, DatasetDict]:
+    train_dataset_dict, test_dataset_dict = {}, {}
     for k, v in dataset_dict.items():
         if isinstance(v, dict):
-            new_v = _subselect(v, index)
+            train_v, test_v = _split(v, index)
         elif isinstance(v, np.ndarray):
-            new_v = v[index]
+            train_v, test_v = v[:index], v[index:]
         else:
-            raise TypeError("Unsupported type.")
-        new_dataset_dict[k] = new_v
-    return new_dataset_dict
+            raise TypeError('Unsupported type.')
+        train_dataset_dict[k] = train_v
+        test_dataset_dict[k] = test_v
+    return train_dataset_dict, test_dataset_dict
 
 
-def _sample(
-    dataset_dict: Union[np.ndarray, DatasetDict], indx: np.ndarray
-) -> DatasetDict:
+def _sample(dataset_dict: Union[np.ndarray, DatasetDict],
+            indx: np.ndarray) -> DatasetDict:
     if isinstance(dataset_dict, np.ndarray):
         return dataset_dict[indx]
     elif isinstance(dataset_dict, dict):
@@ -50,6 +61,7 @@ def _sample(
 
 
 class Dataset(object):
+
     def __init__(self, dataset_dict: DatasetDict, seed: Optional[int] = None):
         self.dataset_dict = dataset_dict
         self.dataset_len = _check_lengths(dataset_dict)
@@ -73,14 +85,12 @@ class Dataset(object):
     def __len__(self) -> int:
         return self.dataset_len
 
-    def sample(
-        self,
-        batch_size: int,
-        keys: Optional[Iterable[str]] = None,
-        indx: Optional[np.ndarray] = None,
-    ) -> frozen_dict.FrozenDict:
+    def sample(self,
+               batch_size: int,
+               keys: Optional[Iterable[str]] = None,
+               indx: Optional[np.ndarray] = None) -> frozen_dict.FrozenDict:
         if indx is None:
-            if hasattr(self.np_random, "integers"):
+            if hasattr(self.np_random, 'integers'):
                 indx = self.np_random.integers(len(self), size=batch_size)
             else:
                 indx = self.np_random.randint(len(self), size=batch_size)
@@ -98,68 +108,264 @@ class Dataset(object):
 
         return frozen_dict.freeze(batch)
 
-    def split(self, ratio: float) -> Tuple["Dataset", "Dataset"]:
+    def split(self, ratio: float) -> Tuple['Dataset', 'Dataset']:
         assert 0 < ratio and ratio < 1
-        train_index = np.index_exp[: int(self.dataset_len * ratio)]
-        test_index = np.index_exp[int(self.dataset_len * ratio) :]
-
-        index = np.arange(len(self), dtype=np.int32)
-        self.np_random.shuffle(index)
-        train_index = index[: int(self.dataset_len * ratio)]
-        test_index = index[int(self.dataset_len * ratio) :]
-
-        train_dataset_dict = _subselect(self.dataset_dict, train_index)
-        test_dataset_dict = _subselect(self.dataset_dict, test_index)
+        index = int(self.dataset_len * ratio)
+        train_dataset_dict, test_dataset_dict = _split(self.dataset_dict,
+                                                       index)
         return Dataset(train_dataset_dict), Dataset(test_dataset_dict)
 
-    def _trajectory_boundaries_and_returns(self) -> Tuple[list, list, list]:
-        episode_starts = [0]
-        episode_ends = []
 
-        episode_return = 0
-        episode_returns = []
+class MixingReplayBuffer():
 
-        for i in range(len(self)):
-            episode_return += self.dataset_dict["rewards"][i]
-
-            if self.dataset_dict["dones"][i]:
-                episode_returns.append(episode_return)
-                episode_ends.append(i + 1)
-                if i + 1 < len(self):
-                    episode_starts.append(i + 1)
-                episode_return = 0.0
-
-        return episode_starts, episode_ends, episode_returns
-
-    def filter(
-        self, percentile: Optional[float] = None, threshold: Optional[float] = None
+    def __init__(
+            self,
+            replay_buffers,
+            mixing_ratio
     ):
-        assert (percentile is None and threshold is not None) or (
-            percentile is not None and threshold is None
-        )
 
-        (
-            episode_starts,
-            episode_ends,
-            episode_returns,
-        ) = self._trajectory_boundaries_and_returns()
+        """
+        :param replay_buffers: sample from given replay buffer with specified probability
+        """
 
-        if percentile is not None:
-            threshold = np.percentile(episode_returns, 100 - percentile)
+        self.replay_buffers = replay_buffers
+        self.mixing_ratio = mixing_ratio
+        assert len(replay_buffers) == 2
 
-        bool_indx = np.full((len(self),), False, dtype=bool)
+    def sample(self,
+               batch_size: int,
+               keys: Optional[Iterable[str]] = None,
+               indx: Optional[np.ndarray] = None) -> frozen_dict.FrozenDict:
 
-        for i in range(len(episode_returns)):
-            if episode_returns[i] >= threshold:
-                bool_indx[episode_starts[i] : episode_ends[i]] = True
+        batches = []
+        if min(self.mixing_ratio, 1 - self.mixing_ratio) * batch_size < 1:
+            size_first = int(np.random.binomial(n=batch_size, p=self.mixing_ratio))
+        else:
+            size_first = int(np.floor(batch_size*self.mixing_ratio))
+        sub_batch_sizes = [size_first, batch_size - size_first]
+        for buf, sb in zip(self.replay_buffers, sub_batch_sizes):
+            if sb > 0:
+                batches.append(buf.sample(sb))
+        mixed_batch = concat_recursive(batches) if len(batches) > 1 else batches[0]
+        return frozen_dict.freeze(mixed_batch)
 
-        self.dataset_dict = _subselect(self.dataset_dict, bool_indx)
+    def set_mixing_ratio(self, mixing_ratio):
+        self.mixing_ratio = mixing_ratio
 
-        self.dataset_len = _check_lengths(self.dataset_dict)
+    def seed(self, seed):
+        [b.seed(seed) for b in self.replay_buffers]
 
-    def normalize_returns(self, scaling: float = 1000):
-        (_, _, episode_returns) = self._trajectory_boundaries_and_returns()
-        self.dataset_dict["rewards"] /= np.max(episode_returns) - np.min(
-            episode_returns
-        )
-        self.dataset_dict["rewards"] *= scaling
+    def __len__(self):
+        return sum([len(b) for b in self.replay_buffers])
+    
+    def length(self):
+        return [b.length() for b in self.replay_buffers]
+
+    def get_random_trajs(self, batch_size):
+        return [b.get_random_trajs(batch_size) for b in self.replay_buffers]
+
+
+    def get_iterator(self,
+                     batch_size: int,
+                     keys: Optional[Iterable[str]] = None,
+                     indx: Optional[np.ndarray] = None,
+                     queue_size: int = 2):
+        # See https://flax.readthedocs.io/en/latest/_modules/flax/jax_utils.html#prefetch_to_device
+        # queue_size = 2 should be ok for one GPU.
+
+        queue = collections.deque()
+
+        def enqueue(n):
+            for _ in range(n):
+                data = self.sample(batch_size, keys, indx)
+                queue.append(jax.device_put(data))
+
+        enqueue(queue_size)
+        while queue:
+            yield queue.popleft()
+            enqueue(1)
+    
+    def increment_traj_counter(self):
+        [b.increment_traj_counter() for b in self.replay_buffers]
+
+    def compute_action_stats(self):
+
+        action_stats_0 = self.replay_buffers[0].compute_action_stats()
+        action_stats_1 = self.replay_buffers[1].compute_action_stats()
+
+        ratio = self.mixing_ratio
+        actions_mean = ratio * action_stats_0['mean'] + (1 - ratio) * action_stats_1['mean']
+        actions_std = np.sqrt(ratio * action_stats_0['std'] ** 2 + (1 - ratio) * action_stats_1['std']** 2 + ratio * (1 - ratio) * (action_stats_0['mean'] - action_stats_1['mean']) ** 2)
+
+        return {'mean': actions_mean, 'std': actions_std}
+
+    def normalize_actions(self, action_stats):
+        # do not normalize gripper dimension (last dimension)
+        [b.normalize_actions(action_stats) for b in self.replay_buffers]
+        
+class MixingReplayBufferParallel():
+    
+    def __init__(
+            self,
+            replay_buffers,
+            mixing_ratio,
+            num_devices=len(jax.devices())
+    ):
+
+        """
+        :param replay_buffers: sample from given replay buffer with specified probability
+        """
+
+        self.replay_buffers = replay_buffers
+        self.mixing_ratio = mixing_ratio
+        assert len(replay_buffers) == 2
+        self.num_devices=num_devices
+
+    def sample(self,
+               batch_size: int,
+               keys: Optional[Iterable[str]] = None,
+               indx: Optional[np.ndarray] = None) -> frozen_dict.FrozenDict:
+
+        batches = []
+        if min(self.mixing_ratio, 1 - self.mixing_ratio) * batch_size < 1:
+            size_first = int(np.random.binomial(n=batch_size, p=self.mixing_ratio))
+        else:
+            size_first = int(np.floor(batch_size*self.mixing_ratio))
+        sub_batch_sizes = [size_first, batch_size - size_first]
+        for buf, sb in zip(self.replay_buffers, sub_batch_sizes):
+            if sb > 0:
+                batches.append(buf.sample(sb))
+        mixed_batch = concat_recursive(batches) if len(batches) > 1 else batches[0]
+        return frozen_dict.freeze(mixed_batch)
+
+    def seed(self, seed):
+        [b.seed(seed) for b in self.replay_buffers]
+        
+    def __len__(self):
+        return sum([len(b) for b in self.replay_buffers])
+
+    def length(self):
+        return [b.length() for b in self.replay_buffers]
+
+    def get_random_trajs(self, batch_size):
+        return [b.get_random_trajs(batch_size) for b in self.replay_buffers]
+
+
+    def get_iterator(self,
+                     batch_size: int,
+                     keys: Optional[Iterable[str]] = None,
+                     indx: Optional[np.ndarray] = None,
+                     queue_size: int = 2):
+        # See https://flax.readthedocs.io/en/latest/_modules/flax/jax_utils.html#prefetch_to_device
+        # queue_size = 2 should be ok for one GPU.
+
+        queue = collections.deque()
+
+        def enqueue(n):
+            assert batch_size % self.num_devices == 0
+            effective_batch_size = batch_size // self.num_devices
+            for _ in range(n):
+                data = [self.sample(effective_batch_size, keys, indx) for _ in range(self.num_devices)]   
+                queue.append(jax.device_put_sharded(data, jax.devices()))
+
+        enqueue(queue_size)
+        while queue:
+            yield queue.popleft()
+            enqueue(1)
+    
+    def increment_traj_counter(self):
+        [b.increment_traj_counter() for b in self.replay_buffers]
+
+    def compute_action_stats(self):
+
+        action_stats_0 = self.replay_buffers[0].compute_action_stats()
+        action_stats_1 = self.replay_buffers[1].compute_action_stats()
+
+        ratio = self.mixing_ratio
+        actions_mean = ratio * action_stats_0['mean'] + (1 - ratio) * action_stats_1['mean']
+        actions_std = np.sqrt(ratio * action_stats_0['std'] ** 2 + (1 - ratio) * action_stats_1['std']** 2 + ratio * (1 - ratio) * (action_stats_0['mean'] - action_stats_1['mean']) ** 2)
+
+        return {'mean': actions_mean, 'std': actions_std}
+
+    def normalize_actions(self, action_stats):
+        # do not normalize gripper dimension (last dimension)
+        [b.normalize_actions(action_stats) for b in self.replay_buffers]
+
+
+
+"""
+Adds additional properties to the dataset.
+"""
+class PropertyReplayBuffer():
+    
+    def __init__(
+            self,
+            replay_buffer,
+            property_dict,
+    ):
+
+        """
+        :param replay_buffers: sample from given replay buffer with specified probability
+        """
+        self.replay_buffer = replay_buffer
+        self.property_dict = property_dict
+
+    def sample(self, batch_size: int, keys: Optional[Iterable[str]] = None, indx: Optional[np.ndarray] = None):
+        batch = self.replay_buffer.sample(batch_size)
+        update_batch = {}
+        for name, value in self.property_dict.items():
+            if isinstance(value, np.ndarray):
+                update_batch[name] = jnp.array(value)
+                update_batch[name] = jnp.expand_dims(batch[name], axis=0).repeat(batch_size, axis=0)
+            elif isinstance(value, float):
+                update_batch[name] = jnp.full((batch_size, 1), value)
+            elif isinstance(value, int):
+                update_batch[name] = jnp.full((batch_size, 1), float(value))
+            else:
+                assert False, "Unsupported type"
+                
+            update_batch[name] = update_batch[name].astype(jnp.float32)
+            batch = batch.copy(add_or_replace=update_batch)
+        
+        return frozen_dict.freeze(batch)
+
+    def seed(self, seed):
+        return self.replay_buffer.seed(seed)
+
+    def length(self):
+        return self.replay_buffer.length()
+
+    def get_random_trajs(self, batch_size):
+        return self.replay_buffer.get_random_trajs(batch_size)
+    
+    def get_iterator(self,
+                     batch_size: int,
+                     keys: Optional[Iterable[str]] = None,
+                     indx: Optional[np.ndarray] = None,
+                     queue_size: int = 2):
+        # See https://flax.readthedocs.io/en/latest/_modules/flax/jax_utils.html#prefetch_to_device
+        # queue_size = 2 should be ok for one GPU.
+
+        queue = collections.deque()
+
+        def enqueue(n):
+            for _ in range(n):
+                data = self.sample(batch_size, keys, indx)
+                queue.append(jax.device_put(data))
+
+        enqueue(queue_size)
+        while queue:
+            yield queue.popleft()
+            enqueue(1)
+    
+    def increment_traj_counter(self):
+        return self.replay_buffer.increment_traj_counter()
+
+    def compute_action_stats(self):
+        return self.replay_buffer.compute_action_stats()
+
+    def normalize_actions(self, action_stats):
+        return self.replay_buffer.normalize_actions(action_stats)
+    
+    def __len__(self) -> int:
+        return len(self.replay_buffer)
