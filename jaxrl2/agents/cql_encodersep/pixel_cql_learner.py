@@ -15,7 +15,6 @@ import jax
 import jax.numpy as jnp
 import optax
 import flax
-from flax import linen as nn
 from flax.core.frozen_dict import FrozenDict
 from flax.core import freeze, unfreeze
 from flax.training import train_state
@@ -31,25 +30,17 @@ from jaxrl2.utils.target_update import soft_target_update
 from jaxrl2.types import Params, PRNGKey
 
 from jaxrl2.agents.agent import Agent
-from jaxrl2.networks.learned_std_normal_policy import LearnedStdNormalPolicy, LearnedStdTanhNormalPolicy
+from jaxrl2.networks.learned_std_normal_policy import LearnedStdTanhNormalPolicy
 from jaxrl2.agents.drq.augmentations import batched_random_crop, color_transform
-from jaxrl2.agents.common import _unpack
-from jaxrl2.agents.drq.drq_learner import _share_encoder
 from jaxrl2.networks.encoders.networks import Encoder, PixelMultiplexer, PixelMultiplexerEncoder, PixelMultiplexerDecoder
 from jaxrl2.networks.encoders.impala_encoder import ImpalaEncoder
 from jaxrl2.networks.encoders.resnet_encoderv1 import ResNet18, ResNet34, ResNetSmall
 from jaxrl2.networks.encoders.resnet_encoderv2 import ResNetV2Encoder
-from jaxrl2.data.dataset import DatasetDict
-from jaxrl2.networks.normal_policy import NormalPolicy
-from jaxrl2.networks.values import StateActionEnsemble, StateValue
-from jaxrl2.networks.values.state_action_value import StateActionValue
-from jaxrl2.networks.values.state_value import StateValueEnsemble
+from jaxrl2.networks.values import StateActionEnsemble
 from jaxrl2.types import Params, PRNGKey
 from jaxrl2.utils.target_update import soft_target_update
 # from jaxrl_m.vision import bigvision_resnetv2 as resnet
 # from jaxrl_m.vision import encoders as encoders
-from icecream import ic
-import wandb
 
 import numpy as np
 from typing import Any

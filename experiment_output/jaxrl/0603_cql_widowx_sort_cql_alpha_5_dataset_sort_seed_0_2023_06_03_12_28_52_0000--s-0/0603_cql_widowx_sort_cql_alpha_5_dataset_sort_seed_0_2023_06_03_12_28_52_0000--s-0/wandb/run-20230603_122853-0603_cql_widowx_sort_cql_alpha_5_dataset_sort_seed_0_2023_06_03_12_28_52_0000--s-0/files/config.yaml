@@ -1,0 +1,431 @@
+wandb_version: 1
+
+seed:
+  desc: null
+  value: 0
+launch_group_id:
+  desc: null
+  value: ''
+eval_episodes:
+  desc: null
+  value: 2
+log_interval:
+  desc: null
+  value: 1000
+eval_interval:
+  desc: null
+  value: 500
+checkpoint_interval:
+  desc: null
+  value: 5000
+batch_size:
+  desc: null
+  value: 64
+offline_finetuning_start:
+  desc: null
+  value: -1
+online_start:
+  desc: null
+  value: 10000000000000
+max_steps:
+  desc: null
+  value: 2000000
+tqdm:
+  desc: null
+  value: 1
+save_video:
+  desc: null
+  value: false
+use_negatives:
+  desc: null
+  value: false
+reward_scale:
+  desc: null
+  value: 11.0
+reward_shift:
+  desc: null
+  value: -1
+reward_type:
+  desc: null
+  value: final_one
+cql_alpha_offline_finetuning:
+  desc: null
+  value: -1.0
+cql_alpha_online_finetuning:
+  desc: null
+  value: -1.0
+obs_latency:
+  desc: null
+  value: 0
+frame_stack:
+  desc: null
+  value: 1
+add_states:
+  desc: null
+  value: 1
+add_prev_actions:
+  desc: null
+  value: false
+dataset:
+  desc: null
+  value: sort
+multi_viewpoint:
+  desc: null
+  value: 1
+online_mixing_ratio:
+  desc: null
+  value: 0.5
+target_mixing_ratio:
+  desc: null
+  value: 0.9
+num_bridge_traj:
+  desc: null
+  value: -1
+num_target_traj:
+  desc: null
+  value: -1
+trajwise_alternating:
+  desc: null
+  value: 1
+restore_path:
+  desc: null
+  value: ''
+only_add_success:
+  desc: null
+  value: false
+wandb_project:
+  desc: null
+  value: 0603_cql_widowx
+from_states:
+  desc: null
+  value: false
+start_online_updates:
+  desc: null
+  value: 1000
+online_from_scratch:
+  desc: null
+  value: false
+use_terminals:
+  desc: null
+  value: 1
+stochastic_data_collect:
+  desc: null
+  value: 1
+algorithm:
+  desc: null
+  value: cql_encodersep
+prefix:
+  desc: null
+  value: 0603_cql_widowx_sort_cql_alpha_5_dataset_sort_seed_0
+config:
+  desc: null
+  value: examples/configs/offline_pixels_default_real.py
+azure:
+  desc: null
+  value: false
+offline_only:
+  desc: null
+  value: 1
+eval_only:
+  desc: null
+  value: false
+color_jitter:
+  desc: null
+  value: 1
+multi_grad_step:
+  desc: null
+  value: 5
+episode_timelimit:
+  desc: null
+  value: 40
+save_replay_buffer:
+  desc: null
+  value: false
+reward_func_type:
+  desc: null
+  value: 0
+rew_func_for_target_only:
+  desc: null
+  value: 0
+bridge_clip_traj_length:
+  desc: null
+  value: -1
+num_demo:
+  desc: null
+  value: 5
+tpu_port:
+  desc: null
+  value: 8820
+suffix:
+  desc: null
+  value: ''
+online_pos_neg_ratio:
+  desc: null
+  value: -1
+offline_only_restore_onlinedata:
+  desc: null
+  value: null
+num_final_reward_steps:
+  desc: null
+  value: 1
+reset_critic:
+  desc: null
+  value: null
+online_cql_alpha_sep_offline:
+  desc: null
+  value: -1.0
+online_cql_alpha_sep_online:
+  desc: null
+  value: -1.0
+alpha_schedule_interval:
+  desc: null
+  value: -1.0
+alpha_schedule_ratio:
+  desc: null
+  value: 1.0
+online_cql_alpha_sep_offline_bridge:
+  desc: null
+  value: -1.0
+online_cql_alpha_sep_offline_target:
+  desc: null
+  value: -1.0
+posneg_schedule_interval:
+  desc: null
+  value: -1.0
+posneg_schedule_ratio:
+  desc: null
+  value: 1.0
+freeze_encoders_actor:
+  desc: null
+  value: false
+freeze_encoders_critic:
+  desc: null
+  value: false
+pretrained_encoder:
+  desc: null
+  value: null
+encoder_key:
+  desc: null
+  value: agent/value/params/encoder
+utd_schedule_interval:
+  desc: null
+  value: -1.0
+utd_schedule_ratio:
+  desc: null
+  value: 1.0
+override_critic_lr:
+  desc: null
+  value: -1.0
+rescale_critic_last_layer_ratio:
+  desc: null
+  value: -1
+wait_actor_update:
+  desc: null
+  value: -1
+bound_q_with_mc:
+  desc: null
+  value: false
+num_online_gradsteps_batch:
+  desc: null
+  value: -1
+keep_mc_bound_online:
+  desc: null
+  value: false
+online_bound_nstep_return:
+  desc: null
+  value: -1
+actor_lr:
+  desc: null
+  value: 0.0001
+critic_lr:
+  desc: null
+  value: 0.0003
+temp_lr:
+  desc: null
+  value: 0.0003
+decay_steps:
+  desc: null
+  value: null
+hidden_dims:
+  desc: null
+  value:
+  - 256
+  - 256
+cnn_features:
+  desc: null
+  value:
+  - 32
+  - 32
+  - 32
+  - 32
+cnn_strides:
+  desc: null
+  value:
+  - 2
+  - 1
+  - 1
+  - 1
+cnn_padding:
+  desc: null
+  value: VALID
+latent_dim:
+  desc: null
+  value: 50
+discount:
+  desc: null
+  value: 0.96
+cql_alpha:
+  desc: null
+  value: 5.0
+tau:
+  desc: null
+  value: 0.005
+backup_entropy:
+  desc: null
+  value: 0
+target_entropy:
+  desc: null
+  value: null
+critic_reduction:
+  desc: null
+  value: min
+dropout_rate:
+  desc: null
+  value: null
+init_temperature:
+  desc: null
+  value: 1.0
+max_q_backup:
+  desc: null
+  value: 1
+policy_encoder_type:
+  desc: null
+  value: small
+encoder_type:
+  desc: null
+  value: small
+encoder_resize_dim:
+  desc: null
+  value: 128
+encoder_norm:
+  desc: null
+  value: batch
+dr3_coefficient:
+  desc: null
+  value: 0.0
+use_spatial_softmax:
+  desc: null
+  value: 1
+softmax_temperature:
+  desc: null
+  value: -1
+share_encoders:
+  desc: null
+  value: 0
+method:
+  desc: null
+  value: 0
+method_const:
+  desc: null
+  value: 0.0
+method_type:
+  desc: null
+  value: 0
+tr_penalty_coefficient:
+  desc: null
+  value: 0.0
+mc_penalty_coefficient:
+  desc: null
+  value: 0.0
+adam_weight_decay:
+  desc: null
+  value: -1.0
+train_kwargs:
+  desc: null
+  value:
+    actor_lr: 0.0001
+    critic_lr: 0.0003
+    temp_lr: 0.0003
+    decay_steps: null
+    hidden_dims:
+    - 256
+    - 256
+    cnn_features:
+    - 32
+    - 32
+    - 32
+    - 32
+    cnn_strides:
+    - 2
+    - 1
+    - 1
+    - 1
+    cnn_padding: VALID
+    latent_dim: 50
+    discount: 0.96
+    cql_alpha: 5.0
+    tau: 0.005
+    backup_entropy: 0
+    target_entropy: null
+    critic_reduction: min
+    dropout_rate: null
+    init_temperature: 1.0
+    max_q_backup: 1
+    policy_encoder_type: small
+    encoder_type: small
+    encoder_resize_dim: 128
+    encoder_norm: batch
+    dr3_coefficient: 0.0
+    use_spatial_softmax: 1
+    softmax_temperature: -1
+    share_encoders: 0
+    method: 0
+    method_const: 0.0
+    method_type: 0
+    tr_penalty_coefficient: 0.0
+    mc_penalty_coefficient: 0.0
+    adam_weight_decay: -1.0
+    cross_norm: false
+    freeze_encoders_actor: false
+    freeze_encoders_critic: false
+    wait_actor_update: 9999999999999
+    bound_q_with_mc: false
+    online_bound_nstep_return: -1
+stochastic_evals:
+  desc: null
+  value: false
+outputdir:
+  desc: null
+  value: /nfs/kun2/users/asap7772/jaxrl2_finetuning_benchmark/experiment_output/jaxrl/0603_cql_widowx_sort_cql_alpha_5_dataset_sort_seed_0_2023_06_03_12_28_52_0000--s-0
+_wandb:
+  desc: null
+  value:
+    code_path: code/examples/launch_train_widowx_cql.py
+    python_version: 3.8.16
+    cli_version: 0.15.3
+    framework: keras
+    is_jupyter_run: false
+    is_kaggle_kernel: true
+    start_time: 1685820533.35667
+    t:
+      1:
+      - 2
+      - 3
+      - 12
+      - 45
+      - 55
+      2:
+      - 2
+      - 3
+      - 12
+      - 45
+      - 55
+      3:
+      - 14
+      - 16
+      - 23
+      4: 3.8.16
+      5: 0.15.3
+      8:
+      - 2
+      - 8
