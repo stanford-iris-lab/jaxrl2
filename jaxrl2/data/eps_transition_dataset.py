@@ -142,6 +142,7 @@ class EpisodicTransitionDataset(Dataset):
         obs_remapping=default_obs_remapping(),
         add_framestack_dim=True,
         max_traj_per_buffer=200,
+        filter_success=False,
     ):
         if isinstance(paths, str):
             paths = [paths]
@@ -168,6 +169,9 @@ class EpisodicTransitionDataset(Dataset):
             num_traj = min(len(data), max_traj_per_buffer)
             for i in tqdm.tqdm(range(num_traj)):
                 rews = np.array(data[i]["rewards"])
+                if filter_success:
+                    if not rews.any():
+                        continue
                 data[i]["mc_returns"] = calc_return_to_go(rews)
                 data[i]["masks"] = np.ones_like(np.array(data[i]["terminals"]))
 

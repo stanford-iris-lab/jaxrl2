@@ -4,6 +4,8 @@ import os
 os.environ["TPU_CHIPS_PER_HOST_BOUNDS"] = "1,1,1"
 os.environ["TPU_HOST_BOUNDS"] = "1,1,1"
 from jaxrl2.agents.cql_encodersep.pixel_cql_learner import PixelCQLLearnerEncoderSep
+from jaxrl2.agents.pixel_bc.pixel_bc_learner import PixelBCLearner
+
 from jaxrl2.wrappers.dummy_env import DummyEnv
 from jaxrl2.data.eps_transition_dataset import EpisodicTransitionDataset
 from jaxrl2.utils.general_utils import add_batch_dim
@@ -56,7 +58,10 @@ def main(variant):
     print("sample obs shapes", [(k, v.shape) for k, v in sample_obs.items()])
     print("sample action shapes", sample_action.shape)
 
-    agent = PixelCQLLearnerEncoderSep(variant.seed, sample_obs, sample_action, **kwargs)
+    if variant['algorithm'] == 'cql_encodersep' or variant['algorithm'] == 'cql':
+        agent = PixelCQLLearnerEncoderSep(variant.seed, sample_obs, sample_action, **kwargs)
+    elif variant['algorithm'] == 'bc':
+        agent = PixelBCLearner(variant.seed, sample_obs, sample_action, **kwargs)
 
     if variant.restore_path != "":
         agent.restore_checkpoint(
@@ -91,8 +96,9 @@ def main(variant):
             dataset_paths = sorting_pickplace_dataset()
         else:
             raise ValueError(f"Unknown dataset type {config_type}")
-
-        replay_buffer = EpisodicTransitionDataset(dataset_paths)
+        
+        filter_success = variant['algorithm'] in ['bc'] or variant.get('filter_success', False)
+        replay_buffer = EpisodicTransitionDataset(dataset_paths, filter_success=filter_success)
 
         offline_training_loop(
             variant,
