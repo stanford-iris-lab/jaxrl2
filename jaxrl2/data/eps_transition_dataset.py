@@ -141,6 +141,7 @@ class EpisodicTransitionDataset(Dataset):
         remapping=default_remapping(),
         obs_remapping=default_obs_remapping(),
         add_framestack_dim=True,
+        max_traj_per_buffer=200,
     ):
         if isinstance(paths, str):
             paths = [paths]
@@ -156,15 +157,19 @@ class EpisodicTransitionDataset(Dataset):
             assert os.path.exists(path), f"Path {path} does not exist"
             print("Loading data from", path)
 
-            data = np.load(path, allow_pickle=True).tolist()
+            try:
+                data = np.load(path, allow_pickle=True).tolist()
+            except:
+                continue # skip this path
 
             self.episodes.extend(data)
 
             succ = []
-            for i in tqdm.tqdm(range(len(data))):
+            num_traj = min(len(data), max_traj_per_buffer)
+            for i in tqdm.tqdm(range(num_traj)):
                 rews = np.array(data[i]["rewards"])
                 data[i]["mc_returns"] = calc_return_to_go(rews)
-                data[i]["masks"] = 1 - np.array(data[i]["terminals"])
+                data[i]["masks"] = np.ones_like(np.array(data[i]["terminals"]))
 
                 succ.append(rews.any())
                 self.episodes_lens.append(len(rews))
@@ -179,8 +184,7 @@ class EpisodicTransitionDataset(Dataset):
                 new_format_dicts.append(new_format_dict)
 
             print("Success rate:", np.mean(succ))
-
-        gc.collect()
+            gc.collect()
         
         self.episode_as_dict = append_all_dicts(new_format_dicts)
         self.episodes_lens = np.array(self.episodes_lens)

@@ -2,7 +2,7 @@
 eval "$(conda shell.bash hook)"
 conda activate jax_recreate
 
-proj_name=06_04_widowx_cql
+proj_name=06_04_widowx_cql_fixedmasks_mixed
 # proj_name=test
 tpu_id=0
 tpu_port=$(( $tpu_id+8820 ))
@@ -17,9 +17,9 @@ dry_run=0
 total_runs=0
 max_runs=8
 gpu_id=0
-which_devices=(6 7)
-alphas=(1)
-datasets=(sorting pickplace)
+which_devices=(5 6 7 4 5 6 7 4)
+alphas=(1 5 10 20)
+datasets=(pickplace)
 
 for alpha in ${alphas[@]}; do
 for dataset in ${datasets[@]}; do
@@ -40,8 +40,8 @@ command="XLA_PYTHON_CLIENT_PREALLOCATE=false python3 examples/launch_train_widow
 --cql_alpha $alpha \
 --wandb_project ${proj_name} \
 --batch_size 64 \
---encoder_type small  \
---policy_encoder_type small \
+--encoder_type impala  \
+--policy_encoder_type impala \
 --actor_lr 0.0001 \
 --critic_lr 0.0003 \
 --dataset $dataset \
@@ -55,13 +55,14 @@ command="XLA_PYTHON_CLIENT_PREALLOCATE=false python3 examples/launch_train_widow
 --checkpoint_interval 20000 \
 --tpu_port $tpu_port \
 --bound_q_with_mc $calql \
+--discount 0.99 \
 --multi_grad_step 5"
 
 echo $command
 
 if [ $dry_run -eq 0 ]; then
     eval $command &
-    sleep 1000
+    sleep 10
 fi
 
 gpu_id=$(( $gpu_id+1 ))
