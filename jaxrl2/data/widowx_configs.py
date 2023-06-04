@@ -1,6 +1,6 @@
 import os
 
-DATA_PATH = '/nfs/kun2/users/asap7772/binsort_bridge/04_26_collect_multitask/'
+DATA_PATH = '/nfs/kun2/users/asap7772/binsort_bridge_sorted/04_26_collect_multitask/'
 ALL_DATASETS = [
     'actionnoise0.0_binnoise0.0_policypickplace_sparse0', 
     'actionnoise0.05_binnoise0.1_policypickplace_sparse0', 

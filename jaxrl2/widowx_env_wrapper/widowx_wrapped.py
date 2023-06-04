@@ -64,14 +64,36 @@ class BinsortObsWrapper(ObservationWrapper):
             obs[k] = v[..., None]
         return obs
     
-def get_gym_binsort(task_id=[3,1]):
+def get_gym_binsort(task_id=[1,4]):
     dm_env = get_binsort_env(task_id=task_id)
     gym_env = DMC2GYM(dm_env)
     gym_env = BinsortObsWrapper(gym_env, task_id=task_id)
     return gym_env
+
+class GymMixedEnvs(gym.core.Wrapper):
+    def __init__(self, envs):
+        super().__init__(envs[0])
+        self.envs = envs
+        self.observation_space = envs[0].observation_space
+        self.action_space = envs[0].action_space
+    
+    def reset(self, **kwargs):
+        self.env = np.random.choice(self.envs)
+        return self.env.reset(**kwargs)
+    
+    def step(self, action):
+        return self.env.step(action)
+    
+    def render(self, mode='human'):
+        return self.env.render(mode)
+
+def get_mixed_gym_envs_binsort(num_objects=5):
+    task_ids = [[i, j] for i in range(num_objects) for j in range(num_objects) if i != j]
+    gym_envs = [get_gym_binsort(task_id=task_id) for task_id in task_ids]
+    return GymMixedEnvs(gym_envs)
     
 if __name__ == '__main__':
-    gym_env = get_gym_binsort()
+    gym_env = get_mixed_gym_envs_binsort(2)
     
     obs = gym_env.reset()
     for i in range(100):
@@ -79,5 +101,9 @@ if __name__ == '__main__':
         obs, reward, done, info = gym_env.step(np.random.randn(7))
         print(f"obs: {obs}")
         print(f"reward: {reward}, done: {done}")
+        
+        if i % 10 == 0:
+            obs = gym_env.reset()
+        
         if done:
             break
