@@ -114,7 +114,7 @@ def _update_jit(
     if True:
         if bc_update:
             rng, key = jax.random.split(rng)
-            new_actor, actor_info = log_prob_update(key, actor, batch)
+            _, new_actor, actor_info = log_prob_update(key, actor, batch)
             new_temp, alpha_info = temp, {}
         else:
             rng, key = jax.random.split(rng)
@@ -365,7 +365,7 @@ class PixelCQLLearnerEncoderSep(Agent):
             self.backup_entropy, self.critic_reduction, self._cql_alpha, self.max_q_backup,
             self.dr3_coefficient, tr_penalty_coefficient=self.tr_penalty_coefficient, 
             mc_penalty_coefficient=self.mc_penalty_coefficient, pretrained_critic_encoder=self._pretrained_critic_encoder,
-            color_jitter=self.color_jitter, method=self.method, method_const=self.method_const, bc_update=self.bc_update,
+            color_jitter=self.color_jitter, method=self.method, method_const=self.method_const, bc_update=bc_update,
             method_type=self.method_type, cross_norm=self.cross_norm, bound_q_with_mc=self.bound_q_with_mc, online_bound_nstep_return=self.online_bound_nstep_return)
         
         new_critic_encoder, new_critic_decoder = new_critic
