@@ -21,8 +21,6 @@ from typing import Any
 
 from jaxrl2.agents.agent import Agent
 from jaxrl2.agents.drq.augmentations import batched_random_crop, color_transform
-from jaxrl2.agents.common import _unpack
-from jaxrl2.agents.drq.drq_learner import _share_encoder
 from jaxrl2.networks.encoders.networks import Encoder, PixelMultiplexer
 from jaxrl2.networks.encoders.impala_encoder import ImpalaEncoder, SmallerImpalaEncoder
 from jaxrl2.networks.encoders.resnet_encoderv1 import ResNet18, ResNet34, ResNetSmall
@@ -32,11 +30,8 @@ from jaxrl2.agents.iql.critic_updater import update_q, update_v
 from jaxrl2.data.dataset import DatasetDict
 from jaxrl2.networks.normal_policy import NormalPolicy
 from jaxrl2.networks.values import StateActionEnsemble, StateValue
-from jaxrl2.networks.values.state_action_value import StateActionValue
-from jaxrl2.networks.values.state_value import StateValueEnsemble
 from jaxrl2.types import Params, PRNGKey
 from jaxrl2.utils.target_update import soft_target_update
-import wandb
 
 
 class TrainState(train_state.TrainState):
@@ -48,20 +43,7 @@ def _update_jit(
     target_critic_params: Params, value: TrainState, batch: TrainState,
     discount: float, tau: float, expectile: float, A_scaling: float,
     critic_reduction: str, color_jitter: bool, share_encoders: bool, aug_next: bool
-) -> Tuple[PRNGKey, TrainState, TrainState, Params, TrainState, Dict[str,
-                                                                     float]]:
-    # batch = _unpack(batch)
-    # if share_encoders:
-    #     actor = _share_encoder(source=critic, target=actor)
-
-    # rng, key = jax.random.split(rng)
-    # aug_pixels = batched_random_crop(key, batch['observations']['pixels'])
-
-    # if color_jitter:
-    #     rng, key = jax.random.split(rng)
-    #     aug_pixels = (color_transform(key, aug_pixels.astype(jnp.float32)/255.)*255).astype(jnp.uint8)
-    # observations = batch['observations'].copy(add_or_replace={'pixels': aug_pixels})
-    # batch = batch.copy(add_or_replace={'observations': observations})
+) -> Tuple[PRNGKey, TrainState, TrainState, Params, TrainState, Dict[str, float]]:
     
     aug_pixels = batch['observations']['pixels']
     aug_next_pixels = batch['next_observations']['pixels']

@@ -25,7 +25,7 @@ total_runs=0
 max_runs=8
 gpu_id=0
 which_devices=(0 1 2 3 4 5 6 7 0 1 2 3)
-actor_lrs=(0.01 0.001 0.0001 0.00001)
+actor_lrs=(0.0001)
 datasets=(sorting pickplace sorting_pickplace)
 
 if [ $debug -eq 1 ]; then

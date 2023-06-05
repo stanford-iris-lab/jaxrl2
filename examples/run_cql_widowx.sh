@@ -25,7 +25,7 @@ max_runs=8
 gpu_id=0
 which_devices=(0 1 2 3 4 5 6 7)
 
-alphas=(0.05 0.1 0.2 0.5)
+alphas=(0.05 0.1 0.2)
 # alphas=(0.05 0.1 0.2 0.5 1.0 2.0 5.0 10.0)
 if [ $debug -eq 1 ]; then
     max_runs=1

@@ -24,8 +24,8 @@ dry_run=0
 total_runs=0
 max_runs=8
 gpu_id=0
-which_devices=(0 1 2 3 4 5 6 7)
-expectiles=(0.5 0.7 0.9 0.99)
+which_devices=(0 1 2 3 4 5)
+expectiles=(0.5 0.8 0.9)
 datasets=(sorting pickplace)
 
 if [ $debug -eq 1 ]; then
@@ -67,8 +67,12 @@ command="XLA_PYTHON_CLIENT_PREALLOCATE=false python3 examples/launch_train_widow
 echo $command
 
 if [ $dry_run -eq 0 ]; then
-    eval $command &
-    sleep 100
+    if [ $debug -eq 1 ]; then
+        eval $command
+    else
+        eval $command &
+        sleep 100
+    fi
 fi
 
 gpu_id=$(( $gpu_id+1 ))

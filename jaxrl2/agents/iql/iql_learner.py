@@ -56,7 +56,7 @@ def _update_jit(
     }
 
 
-class PixelIQLLearner(Agent):
+class IQLLearner(Agent):
 
     def __init__(self,
                  seed: int,

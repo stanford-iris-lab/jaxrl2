@@ -74,7 +74,6 @@ if __name__ == '__main__':
     parser.add_argument("--azure", action='store_true', help="run on azure")
     parser.add_argument("--offline_only", default=1, help="whether to only perform offline training", type=int)
     parser.add_argument("--eval_only", action='store_true', help="perform evals only")
-    parser.add_argument('--color_jitter', default=1, help='type of algorithm', type=int)
     parser.add_argument('--multi_grad_step', default=1, help='Number of graident steps to take per environment step', type=int)
 
     #environment
@@ -118,46 +117,35 @@ if __name__ == '__main__':
 
     # algorithm args:
     train_args_dict = dict(
-        actor_lr= 3e-4,
-        critic_lr= 3e-4,
-        value_lr= 3e-4,
+        actor_lr = 3e-4,
+        critic_lr = 3e-4,
+        value_lr = 3e-4,
         decay_steps = None,
         hidden_dims = (256, 256),
         cnn_features = (32, 32, 32, 32),
         cnn_strides = (2, 1, 1, 1),
         cnn_padding = 'VALID',
         latent_dim = 50,
-        discount= 0.99,
-        tau= 0.005,
-        expectile= 0.9,
-        A_scaling= 10.0,
+        discount = 0.99,
+        tau = 0.005,
+        expectile = 0.9,
+        A_scaling = 10.0,
         critic_reduction = 'min',
         dropout_rate = None,
-        encoder_type='impala',
+        encoder_type='resnet_34_v1',
         encoder_norm='batch',
         policy_type='unit_std_normal',
         policy_std=1.,
-        color_jitter = True,
-        share_encoders = False,
+        color_jitter = 1,
+        share_encoders = 0,
         mlp_init_scale=1.,
         mlp_output_scale=1.,
-        use_spatial_softmax=True,
+        use_spatial_softmax=1,
         softmax_temperature=1,
-        aug_next=False,
-        use_bottleneck=True
+        aug_next=0,
+        use_bottleneck=1
     )
     
     variant, args = parse_training_args(train_args_dict, parser)
-    variant['train_kwargs']['cross_norm'] = (args.encoder_norm == 'cross')
-    variant['train_kwargs']['tr_penalty_coefficient'] = args.tr_penalty_coefficient
-    variant['train_kwargs']['mc_penalty_coefficient'] = args.mc_penalty_coefficient
-    variant['train_kwargs']['adam_weight_decay'] = args.adam_weight_decay
-    variant['train_kwargs']['freeze_encoders_actor'] = args.freeze_encoders_actor
-    variant['train_kwargs']['freeze_encoders_critic'] = args.freeze_encoders_critic
-    variant['train_kwargs']['wait_actor_update'] = args.wait_actor_update + args.online_start
-    if variant['override_critic_lr'] > 0:
-        variant['train_kwargs']['critic_lr'] = variant['override_critic_lr']
-    variant['train_kwargs']['bound_q_with_mc'] = args.bound_q_with_mc
-    variant['train_kwargs']['online_bound_nstep_return'] = args.online_bound_nstep_return
 
     main(variant)
