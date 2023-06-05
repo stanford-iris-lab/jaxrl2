@@ -1,7 +1,7 @@
 import sys
 
-sys.path.append('/nfs/kun2/users/asap7772/finetuning_benchmark')
-sys.path.append('/nfs/kun2/users/asap7772/finetuning_benchmark/data_collection')
+sys.path.append('/home/asap7772/finetuning_benchmark')
+sys.path.append('/home/asap7772/finetuning_benchmark/data_collection')
 
 import numpy as np
 from dm_control.composer.environment import Environment

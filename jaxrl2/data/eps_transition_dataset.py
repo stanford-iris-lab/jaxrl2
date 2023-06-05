@@ -196,6 +196,22 @@ class EpisodicTransitionDataset(Dataset):
         super().__init__(self.episode_as_dict)
 
         print("Total number of episodes:", len(self.episodes))
+        
+    def get_random_trajs(self, num_trajs):
+        trajs = []
+        for _ in range(num_trajs):
+            traj = self.episodes[np.random.randint(len(self.episodes))]
+            trajs.append(traj)
+        
+        new_format_dict = {}
+        for k in traj.keys():
+            new_format_dict[k] = []
+            for i in range(len(trajs)):
+                new_format_dict[k].append(trajs[i][k])
+        
+        new_format_dict = npify_dict(new_format_dict)
+        
+        return new_format_dict
 
     def get_iterator(
         self,

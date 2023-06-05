@@ -5,6 +5,8 @@ os.environ["TPU_CHIPS_PER_HOST_BOUNDS"] = "1,1,1"
 os.environ["TPU_HOST_BOUNDS"] = "1,1,1"
 from jaxrl2.agents.cql_encodersep.pixel_cql_learner import PixelCQLLearnerEncoderSep
 from jaxrl2.agents.pixel_bc.pixel_bc_learner import PixelBCLearner
+from jaxrl2.agents.pixel_iql.pixel_iql_learner import PixelIQLLearner
+from jaxrl2.agents.pixel_td3bc.pixel_td3bc_learner import PixelTD3BCLearner
 
 from jaxrl2.wrappers.dummy_env import DummyEnv
 from jaxrl2.data.eps_transition_dataset import EpisodicTransitionDataset
@@ -62,6 +64,12 @@ def main(variant):
         agent = PixelCQLLearnerEncoderSep(variant.seed, sample_obs, sample_action, **kwargs)
     elif variant['algorithm'] == 'bc':
         agent = PixelBCLearner(variant.seed, sample_obs, sample_action, **kwargs)
+    elif variant['algorithm'] == 'iql':
+        agent = PixelIQLLearner(variant.seed, sample_obs, sample_action, **kwargs)
+    elif variant['algorithm'] == 'td3bc':
+        agent = PixelTD3BCLearner(variant.seed, sample_obs, sample_action, **kwargs)
+    else:
+        raise ValueError(f"Unknown algorithm {variant['algorithm']}")
 
     if variant.restore_path != "":
         agent.restore_checkpoint(

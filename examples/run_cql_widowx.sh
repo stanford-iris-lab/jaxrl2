@@ -2,12 +2,18 @@
 eval "$(conda shell.bash hook)"
 conda activate jax_recreate
 
-proj_name=06_04_widowx_cql_fixedmasks_mixed
-# proj_name=test
+debug=0
+
+if [ $debug -eq 1 ]; then
+    proj_name=test
+else
+    proj_name=06_05_widowx_cql_smaller_alphas_relaunch
+fi
+
 tpu_id=0
 tpu_port=$(( $tpu_id+8820 ))
-export PYTHONPATH=/nfs/kun2/users/asap7772/jaxrl2_finetuning_benchmark/:$PYTHONPATH; 
-export EXP=/nfs/kun2/users/asap7772/jaxrl2_finetuning_benchmark/experiment_output
+export PYTHONPATH=/home/asap7772/jaxrl2_finetuning_benchmark/:$PYTHONPATH; 
+export EXP=/home/asap7772/jaxrl2_finetuning_benchmark/experiment_output
 export DATA=/nfs/nfs1/
 
 seed=0
@@ -17,9 +23,17 @@ dry_run=0
 total_runs=0
 max_runs=8
 gpu_id=0
-which_devices=(4 5 6 7)
-alphas=(0.1 0.05)
-datasets=(pickplace sorting)
+which_devices=(0 1 2 3 4 5 6 7)
+
+alphas=(0.05 0.1 0.2 0.5)
+# alphas=(0.05 0.1 0.2 0.5 1.0 2.0 5.0 10.0)
+if [ $debug -eq 1 ]; then
+    max_runs=1
+    datasets=(debug)
+else
+    datasets=(sorting pickplace)
+    # datasets=(sorting_pickplace)
+fi
 
 for alpha in ${alphas[@]}; do
 for dataset in ${datasets[@]}; do
@@ -52,17 +66,22 @@ command="XLA_PYTHON_CLIENT_PREALLOCATE=false python3 examples/launch_train_widow
 --eval_interval 1000 \
 --log_interval 1000 \
 --eval_episodes 20 \
---checkpoint_interval 10000000000000 \ 
 --tpu_port $tpu_port \
 --bound_q_with_mc $calql \
 --discount 0.99 \
+--checkpoint_interval 10000000000000 \
+--bc_hotstart 50000 \
 --multi_grad_step 5"
 
 echo $command
 
 if [ $dry_run -eq 0 ]; then
-    eval $command &
-    sleep 10
+    if [ $debug -eq 1 ]; then
+        eval $command
+    else
+        eval $command &
+        sleep 10
+    fi
 fi
 
 gpu_id=$(( $gpu_id+1 ))

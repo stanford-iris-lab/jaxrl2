@@ -163,7 +163,11 @@ def trajwise_alternating_training_loop(variant, agent, env, eval_env, online_rep
                         wandb_logger.log({'num_online_trajs': traj_id}, step=i)
                         if perform_control_evals:
                             perform_control_eval(agent, eval_env, i, variant, wandb_logger)
-                        # agent.perform_eval(variant, i, wandb_logger, replay_buffer, replay_buffer_iterator, eval_env)
+                        
+                        try:
+                            agent.perform_eval(variant, i, wandb_logger, replay_buffer, replay_buffer_iterator, eval_env)
+                        except:
+                            pass
 
                     if variant.checkpoint_interval != -1:
                         if i % variant.checkpoint_interval == 0:
@@ -342,7 +346,15 @@ def run_multiple_trajs(variant, agent, env, num_trajs, deterministic=True):
 
     return {
         'return': np.mean(returns),
+        'return_mean': np.mean(returns),
+        'return_std': np.std(returns),
+        'return_max': np.max(returns),
+        'return_min': np.min(returns),
         'mult_stage_return': np.mean(mult_stage_returns),
+        'mult_stage_return_mean': np.mean(mult_stage_returns),
+        'mult_stage_return_min': np.std(mult_stage_returns),
+        'mult_stage_return_max': np.max(mult_stage_returns),
+        'mult_stage_return_std': np.min(mult_stage_returns),
         'length': np.mean(lengths),
         'obs': obs[-1],
         'rewards': np.array([step['reward'] for step in traj])

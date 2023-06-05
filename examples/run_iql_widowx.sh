@@ -7,7 +7,7 @@ debug=0
 if [ $debug -eq 1 ]; then
     proj_name=test
 else
-    proj_name=06_05_widowx_bc_relaunch
+    proj_name=06_05_widowx_iql
 fi
 
 # proj_name=test
@@ -24,9 +24,9 @@ dry_run=0
 total_runs=0
 max_runs=8
 gpu_id=0
-which_devices=(0 1 2 3 4 5 6 7 0 1 2 3)
-actor_lrs=(0.01 0.001 0.0001 0.00001)
-datasets=(sorting pickplace sorting_pickplace)
+which_devices=(0 1 2 3 4 5 6 7)
+expectiles=(0.5 0.7 0.9 0.99)
+datasets=(sorting pickplace)
 
 if [ $debug -eq 1 ]; then
     max_runs=1
@@ -35,7 +35,7 @@ if [ $debug -eq 1 ]; then
 fi
 
 for dataset in ${datasets[@]}; do
-for actor_lr in ${actor_lrs[@]}; do
+for expectile in ${expectiles[@]}; do
 
 prefix=${proj_name}_${dataset}_cql_alpha_${alpha}_dataset_${dataset}_seed_${seed}
 which_gpu=${which_devices[$gpu_id]}
@@ -47,13 +47,13 @@ export MUJOCO_GL=egl
 export MUJOCO_EGL_DEVICE_ID=$which_gpu
 
 
-command="XLA_PYTHON_CLIENT_PREALLOCATE=false python3 examples/launch_train_widowx_bc.py \
+command="XLA_PYTHON_CLIENT_PREALLOCATE=false python3 examples/launch_train_widowx_iql.py \
 --prefix $prefix \
 --wandb_project ${proj_name} \
---batch_size 256 \
---encoder impala  \
---actor_lr $actor_lr \
+--batch_size 64 \
+--encoder_type impala  \
 --dataset $dataset \
+--expectile $expectile \
 --seed $seed \
 --offline_finetuning_start -1 \
 --online_start 10000000000000 \
