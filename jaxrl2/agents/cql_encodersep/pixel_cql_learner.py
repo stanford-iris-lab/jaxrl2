@@ -21,6 +21,7 @@ from flax.training import train_state
 
 from jaxrl2.agents.agent import Agent
 
+from jaxrl2.agents.bc.actor_updater import log_prob_update
 from jaxrl2.agents.cql_encodersep.actor_updater import update_actor
 from jaxrl2.agents.cql_encodersep.critic_updater import update_critic
 from jaxrl2.agents.cql_encodersep.temperature_updater import update_temperature
@@ -48,14 +49,14 @@ from typing import Any
 class TrainState(train_state.TrainState):
     batch_stats: Any = None
 
-@functools.partial(jax.jit, static_argnames=['critic_reduction', 'backup_entropy', 'max_q_backup', 'method', 'method_type', 'cross_norm', 'color_jitter', 'tr_penalty_coefficient', 'mc_penalty_coefficient', 'bound_q_with_mc', 'online_bound_nstep_return'])
+@functools.partial(jax.jit, static_argnames=['critic_reduction', 'backup_entropy', 'max_q_backup', 'method', 'method_type', 'cross_norm', 'color_jitter', 'tr_penalty_coefficient', 'mc_penalty_coefficient', 'bound_q_with_mc', 'online_bound_nstep_return', 'bc_update'])
 def _update_jit(
     rng: PRNGKey, actor: TrainState, critic_encoder: TrainState,
     critic_decoder: TrainState, target_critic_encoder_params: Params, 
     target_critic_decoder_params: Params, temp: TrainState, batch: TrainState,
     discount: float, tau: float, target_entropy: float, backup_entropy: bool,
     critic_reduction: str, cql_alpha: float, max_q_backup: bool, dr3_coefficient: float,tr_penalty_coefficient:float, mc_penalty_coefficient:float, pretrained_critic_encoder: TrainState,
-    method:bool = False, method_const:float = 0.0, method_type:int=0, 
+    method:bool = False, method_const:float = 0.0, method_type:int=0, bc_update=0,
     cross_norm:bool = False, color_jitter:bool = False, bound_q_with_mc:bool = False, online_bound_nstep_return:int=-1
     ) -> Tuple[PRNGKey, TrainState, TrainState, Params, TrainState, Dict[str,float]]:
 
@@ -111,9 +112,14 @@ def _update_jit(
             critic_encoder, critic_decoder, {}, target_critic_encoder_params, target_critic_decoder_params
 
     if True:
-        rng, key = jax.random.split(rng)
-        new_actor, actor_info = update_actor(key, actor, new_critic_encoder, new_critic_decoder, temp, batch, cross_norm=cross_norm)
-        new_temp, alpha_info = update_temperature(temp, actor_info['entropy'], target_entropy)
+        if bc_update:
+            rng, key = jax.random.split(rng)
+            _, new_actor, actor_info = log_prob_update(key, actor, batch)
+            new_temp, alpha_info = temp, {}
+        else:
+            rng, key = jax.random.split(rng)
+            new_actor, actor_info = update_actor(key, actor, new_critic_encoder, new_critic_decoder, temp, batch, cross_norm=cross_norm)
+            new_temp, alpha_info = update_temperature(temp, actor_info['entropy'], target_entropy)
     else:
         new_actor, actor_info, new_temp, alpha_info = actor, {}, temp, {}
 
@@ -172,6 +178,7 @@ class PixelCQLLearnerEncoderSep(Agent):
                  bound_q_with_mc=False,
                  online_bound_nstep_return=-1,
                  mae_type='vc1',
+                 bc_hotstart=0,
                  **kwargs,
         ):
         print('Unused', kwargs)
@@ -203,6 +210,7 @@ class PixelCQLLearnerEncoderSep(Agent):
         self.wait_actor_update = wait_actor_update
         self.bound_q_with_mc = bound_q_with_mc
         self.online_bound_nstep_return = online_bound_nstep_return
+        self.bc_hotstart = bc_hotstart
 
         rng = jax.random.PRNGKey(seed)
         rng, actor_key, critic_key, temp_key = jax.random.split(rng, 4)
@@ -348,13 +356,16 @@ class PixelCQLLearnerEncoderSep(Agent):
 
 
     def update(self, batch: FrozenDict, i=-1) -> Dict[str, float]:
+        bc_update = int(i < self.bc_hotstart)
+        
         new_rng, new_actor, new_critic, new_target_critic_params, new_temp, info = _update_jit(
             self._rng, self._actor, self._critic_encoder, self._critic_decoder, 
             self._target_critic_encoder_params, self._target_critic_decoder_params,
             self._temp, batch, self.discount, self.tau, self.target_entropy,
             self.backup_entropy, self.critic_reduction, self._cql_alpha, self.max_q_backup,
-            self.dr3_coefficient, tr_penalty_coefficient=self.tr_penalty_coefficient, mc_penalty_coefficient=self.mc_penalty_coefficient, pretrained_critic_encoder=self._pretrained_critic_encoder,color_jitter=self.color_jitter, 
-            method=self.method, method_const=self.method_const,
+            self.dr3_coefficient, tr_penalty_coefficient=self.tr_penalty_coefficient, 
+            mc_penalty_coefficient=self.mc_penalty_coefficient, pretrained_critic_encoder=self._pretrained_critic_encoder,
+            color_jitter=self.color_jitter, method=self.method, method_const=self.method_const, bc_update=bc_update,
             method_type=self.method_type, cross_norm=self.cross_norm, bound_q_with_mc=self.bound_q_with_mc, online_bound_nstep_return=self.online_bound_nstep_return)
         
         new_critic_encoder, new_critic_decoder = new_critic

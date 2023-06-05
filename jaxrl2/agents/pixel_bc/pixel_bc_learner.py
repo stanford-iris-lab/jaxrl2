@@ -11,7 +11,7 @@ from flax.training.train_state import TrainState
 
 from jaxrl2.agents.agent import Agent
 from jaxrl2.agents.bc.actor_updater import log_prob_update
-from jaxrl2.agents.drq.augmentations import batched_random_crop
+from jaxrl2.agents.drq.augmentations import batched_random_crop, color_transform
 from jaxrl2.agents.drq.drq_learner import _unpack
 from jaxrl2.data.dataset import DatasetDict
 from jaxrl2.networks.encoders import ResNetV2Encoder, ImpalaEncoder
@@ -34,12 +34,20 @@ from typing import Any
 def _update_jit(
     rng: PRNGKey, actor: TrainState, batch: TrainState
 ) -> Tuple[PRNGKey, TrainState, TrainState, Params, TrainState, Dict[str, float]]:
-    batch = _unpack(batch)
+    # batch = _unpack(batch)
+    aug_pixels = batch['observations']['pixels']
+    aug_next_pixels = batch['next_observations']['pixels']
 
-    rng, key = jax.random.split(rng)
-    aug_pixels = batched_random_crop(key, batch["observations"]["pixels"])
-    observations = batch["observations"].copy(add_or_replace={"pixels": aug_pixels})
-    batch = batch.copy(add_or_replace={"observations": observations})
+    if batch['observations']['pixels'].squeeze().ndim != 2:
+        # random crop
+        rng, key = jax.random.split(rng)
+        aug_pixels = batched_random_crop(key, batch['observations']['pixels'])
+
+        rng, key = jax.random.split(rng)
+        aug_pixels = (color_transform(key, aug_pixels.astype(jnp.float32)/255.)*255).astype(jnp.uint8)
+
+    observations = batch['observations'].copy(add_or_replace={'pixels': aug_pixels})
+    batch = batch.copy(add_or_replace={'observations': observations})
 
     rng, new_actor, actor_info = log_prob_update(rng, actor, batch)
 
@@ -68,6 +76,7 @@ class PixelBCLearner(Agent):
         softmax_temperature=-1,
         use_multiplicative_cond=False,
         use_spatial_learned_embeddings=False,
+        **kwargs,
     ):
         """
         An implementation of the version of Soft-Actor-Critic described in https://arxiv.org/abs/1812.05905
@@ -98,23 +107,12 @@ class PixelBCLearner(Agent):
                                    use_multiplicative_cond=use_multiplicative_cond,
                                    use_spatial_learned_embeddings=use_spatial_learned_embeddings,
                                    num_spatial_blocks=8,)
-            # encoder_defs.append(encoder_def)
-        # encoder_def = ResNet34(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature,
-        #                        use_multiplicative_cond=use_multiplicative_cond,
-        #                        use_spatial_learned_embeddings=use_spatial_learned_embeddings,
-        #                        num_spatial_blocks=8,
-        #                        conv=partial(GroupConvWrapper, groups=cnn_groups))
-        # encoder_def = D4PGEncoderGroups(cnn_features, cnn_filters, cnn_strides, cnn_padding, cnn_groups)
-
 
         if decay_steps is not None:
             actor_lr = optax.cosine_decay_schedule(actor_lr, decay_steps)
         policy_def = UnitStdNormalPolicy(
             hidden_dims, action_dim, dropout_rate=dropout_rate
         )
-        # actor_def = PixelMultiplexerMultiple(
-        #     encoders=encoder_defs, network=policy_def, latent_dim=latent_dim
-        # )
         actor_def = PixelMultiplexer(
             encoder=encoder_def, network=policy_def, latent_dim=latent_dim
         )

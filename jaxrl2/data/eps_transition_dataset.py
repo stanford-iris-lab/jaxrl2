@@ -142,6 +142,7 @@ class EpisodicTransitionDataset(Dataset):
         obs_remapping=default_obs_remapping(),
         add_framestack_dim=True,
         max_traj_per_buffer=200,
+        filter_success=False,
     ):
         if isinstance(paths, str):
             paths = [paths]
@@ -168,6 +169,9 @@ class EpisodicTransitionDataset(Dataset):
             num_traj = min(len(data), max_traj_per_buffer)
             for i in tqdm.tqdm(range(num_traj)):
                 rews = np.array(data[i]["rewards"])
+                if filter_success:
+                    if not rews.any():
+                        continue
                 data[i]["mc_returns"] = calc_return_to_go(rews)
                 data[i]["masks"] = np.ones_like(np.array(data[i]["terminals"]))
 
@@ -192,6 +196,22 @@ class EpisodicTransitionDataset(Dataset):
         super().__init__(self.episode_as_dict)
 
         print("Total number of episodes:", len(self.episodes))
+        
+    def get_random_trajs(self, num_trajs):
+        trajs = []
+        for _ in range(num_trajs):
+            traj = self.episodes[np.random.randint(len(self.episodes))]
+            trajs.append(traj)
+        
+        new_format_dict = {}
+        for k in traj.keys():
+            new_format_dict[k] = []
+            for i in range(len(trajs)):
+                new_format_dict[k].append(trajs[i][k])
+        
+        new_format_dict = npify_dict(new_format_dict)
+        
+        return new_format_dict
 
     def get_iterator(
         self,

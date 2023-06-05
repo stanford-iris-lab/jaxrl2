@@ -67,14 +67,13 @@ if __name__ == '__main__':
 
     parser.add_argument('--stochastic_data_collect', default=1, help='sample from stochastic policy for data collection.', type=int)
 
-    parser.add_argument('--algorithm', default='cql_encodersep', help='type of algorithm')
+    parser.add_argument('--algorithm', default='td3bc', help='type of algorithm')
 
     parser.add_argument('--prefix', default='', help='prefix to use for wandb')
     parser.add_argument('--config', default='examples/configs/offline_pixels_default_real.py', help='File path to the training hyperparameter configuration.')
     parser.add_argument("--azure", action='store_true', help="run on azure")
     parser.add_argument("--offline_only", default=1, help="whether to only perform offline training", type=int)
     parser.add_argument("--eval_only", action='store_true', help="perform evals only")
-    parser.add_argument('--color_jitter', default=1, help='type of algorithm', type=int)
     parser.add_argument('--multi_grad_step', default=1, help='Number of graident steps to take per environment step', type=int)
 
     #environment
@@ -118,52 +117,32 @@ if __name__ == '__main__':
 
     # algorithm args:
     train_args_dict = dict(
-        actor_lr=1e-4,
-        critic_lr= 3e-4,
-        temp_lr= 3e-4,
-        decay_steps= None,
-        hidden_dims= (256, 256),
-        cnn_features= (32, 32, 32, 32),
-        cnn_strides= (2, 1, 1, 1),
-        cnn_padding= 'VALID',
-        latent_dim= 50,
-        discount= 0.96,
-        cql_alpha= 0.0,
-        tau= 0.005,
-        backup_entropy= False,
-        target_entropy= None,
-        critic_reduction= 'min',
-        dropout_rate= None,
-        init_temperature= 1.0,
-        max_q_backup=True,
-        policy_encoder_type='resnet_small',
-        encoder_type='resnet_small',
-        encoder_resize_dim=128,
-        encoder_norm= 'batch',
-        dr3_coefficient= 0.0,
-        use_spatial_softmax=True,
-        softmax_temperature=-1,
-        share_encoders=False,
-        method=False,
-        method_const=0.0,
-        method_type=0,
-        tr_penalty_coefficient=0.0,
-        mc_penalty_coefficient=0.0,
-        adam_weight_decay=-1.0,
-        bc_hotstart=0,
+        actor_lr = 3e-4,
+        critic_lr = 3e-4,
+        decay_steps = None,
+        hidden_dims = (256, 256),
+        cnn_features = (32, 32, 32, 32),
+        cnn_strides = (2, 1, 1, 1),
+        cnn_padding = 'VALID',
+        latent_dim = 50,
+        discount = 0.99,
+        tau = 0.005,
+        alpha = 2.0,
+        dropout_rate = None,
+        encoder_type='resnet_34_v1',
+        encoder_norm='batch',
+        policy_type='unit_std_normal',
+        policy_std=1.,
+        color_jitter = 1,
+        share_encoders = 0,
+        mlp_init_scale=1.,
+        mlp_output_scale=1.,
+        use_spatial_softmax=1,
+        softmax_temperature=1,
+        aug_next=0,
+        use_bottleneck=1
     )
     
     variant, args = parse_training_args(train_args_dict, parser)
-    variant['train_kwargs']['cross_norm'] = (args.encoder_norm == 'cross')
-    variant['train_kwargs']['tr_penalty_coefficient'] = args.tr_penalty_coefficient
-    variant['train_kwargs']['mc_penalty_coefficient'] = args.mc_penalty_coefficient
-    variant['train_kwargs']['adam_weight_decay'] = args.adam_weight_decay
-    variant['train_kwargs']['freeze_encoders_actor'] = args.freeze_encoders_actor
-    variant['train_kwargs']['freeze_encoders_critic'] = args.freeze_encoders_critic
-    variant['train_kwargs']['wait_actor_update'] = args.wait_actor_update + args.online_start
-    if variant['override_critic_lr'] > 0:
-        variant['train_kwargs']['critic_lr'] = variant['override_critic_lr']
-    variant['train_kwargs']['bound_q_with_mc'] = args.bound_q_with_mc
-    variant['train_kwargs']['online_bound_nstep_return'] = args.online_bound_nstep_return
 
     main(variant)

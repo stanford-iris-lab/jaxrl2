@@ -67,7 +67,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--stochastic_data_collect', default=1, help='sample from stochastic policy for data collection.', type=int)
 
-    parser.add_argument('--algorithm', default='cql_encodersep', help='type of algorithm')
+    parser.add_argument('--algorithm', default='bc', help='type of algorithm')
 
     parser.add_argument('--prefix', default='', help='prefix to use for wandb')
     parser.add_argument('--config', default='examples/configs/offline_pixels_default_real.py', help='File path to the training hyperparameter configuration.')
@@ -116,54 +116,27 @@ if __name__ == '__main__':
     parser.add_argument('--online_bound_nstep_return', default=-1, help='use Nstep return instead of MC return to go for lowerbound during online finetuning', type=int)
 
 
+
     # algorithm args:
     train_args_dict = dict(
-        actor_lr=1e-4,
-        critic_lr= 3e-4,
-        temp_lr= 3e-4,
-        decay_steps= None,
-        hidden_dims= (256, 256),
-        cnn_features= (32, 32, 32, 32),
-        cnn_strides= (2, 1, 1, 1),
-        cnn_padding= 'VALID',
-        latent_dim= 50,
-        discount= 0.96,
-        cql_alpha= 0.0,
-        tau= 0.005,
-        backup_entropy= False,
-        target_entropy= None,
-        critic_reduction= 'min',
-        dropout_rate= None,
-        init_temperature= 1.0,
-        max_q_backup=True,
-        policy_encoder_type='resnet_small',
-        encoder_type='resnet_small',
-        encoder_resize_dim=128,
-        encoder_norm= 'batch',
-        dr3_coefficient= 0.0,
-        use_spatial_softmax=True,
+        actor_lr = 3e-4,
+        decay_steps = None,
+        hidden_dims = (256, 256),
+        cnn_features = (32, 32, 32, 32),
+        cnn_filters = (3, 3, 3, 3),
+        cnn_strides = (2, 1, 1, 1),
+        cnn_padding = "VALID",
+        cnn_groups = 1,  ###===### ###---###
+        latent_dim = 50,
+        dropout_rate = None,
+        encoder = "d4pg",
+        encoder_norm = 'batch',
+        use_spatial_softmax=False,
         softmax_temperature=-1,
-        share_encoders=False,
-        method=False,
-        method_const=0.0,
-        method_type=0,
-        tr_penalty_coefficient=0.0,
-        mc_penalty_coefficient=0.0,
-        adam_weight_decay=-1.0,
-        bc_hotstart=0,
+        use_multiplicative_cond=False,
+        use_spatial_learned_embeddings=False,
     )
-    
+
     variant, args = parse_training_args(train_args_dict, parser)
-    variant['train_kwargs']['cross_norm'] = (args.encoder_norm == 'cross')
-    variant['train_kwargs']['tr_penalty_coefficient'] = args.tr_penalty_coefficient
-    variant['train_kwargs']['mc_penalty_coefficient'] = args.mc_penalty_coefficient
-    variant['train_kwargs']['adam_weight_decay'] = args.adam_weight_decay
-    variant['train_kwargs']['freeze_encoders_actor'] = args.freeze_encoders_actor
-    variant['train_kwargs']['freeze_encoders_critic'] = args.freeze_encoders_critic
-    variant['train_kwargs']['wait_actor_update'] = args.wait_actor_update + args.online_start
-    if variant['override_critic_lr'] > 0:
-        variant['train_kwargs']['critic_lr'] = variant['override_critic_lr']
-    variant['train_kwargs']['bound_q_with_mc'] = args.bound_q_with_mc
-    variant['train_kwargs']['online_bound_nstep_return'] = args.online_bound_nstep_return
 
     main(variant)
