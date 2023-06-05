@@ -17,9 +17,9 @@ dry_run=0
 total_runs=0
 max_runs=8
 gpu_id=0
-which_devices=(5 6 7 4 5 6 7 4)
-alphas=(1 5 10 20)
-datasets=(pickplace)
+which_devices=(4 5 6 7)
+alphas=(0.1 0.05)
+datasets=(pickplace sorting)
 
 for alpha in ${alphas[@]}; do
 for dataset in ${datasets[@]}; do
@@ -52,7 +52,7 @@ command="XLA_PYTHON_CLIENT_PREALLOCATE=false python3 examples/launch_train_widow
 --eval_interval 1000 \
 --log_interval 1000 \
 --eval_episodes 20 \
---checkpoint_interval 20000 \
+--checkpoint_interval 10000000000000 \ 
 --tpu_port $tpu_port \
 --bound_q_with_mc $calql \
 --discount 0.99 \

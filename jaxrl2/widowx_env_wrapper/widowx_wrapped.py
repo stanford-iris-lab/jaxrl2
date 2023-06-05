@@ -88,10 +88,13 @@ class GymMixedEnvs(gym.core.Wrapper):
         return self.env.render(mode)
 
 def get_mixed_gym_envs_binsort(num_objects=5):
-    task_ids = [[i, j] for i in range(num_objects) for j in range(num_objects) if i != j]
+    task_ids = []
+    for i in range(num_objects):
+        for j in range(i+1, num_objects):
+            task_ids.append([i, j])
     gym_envs = [get_gym_binsort(task_id=task_id) for task_id in task_ids]
     return GymMixedEnvs(gym_envs)
-    
+
 if __name__ == '__main__':
     gym_env = get_mixed_gym_envs_binsort(2)
     

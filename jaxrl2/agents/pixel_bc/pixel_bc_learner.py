@@ -11,7 +11,7 @@ from flax.training.train_state import TrainState
 
 from jaxrl2.agents.agent import Agent
 from jaxrl2.agents.bc.actor_updater import log_prob_update
-from jaxrl2.agents.drq.augmentations import batched_random_crop, color_transform, color_jitter
+from jaxrl2.agents.drq.augmentations import batched_random_crop, color_transform
 from jaxrl2.agents.drq.drq_learner import _unpack
 from jaxrl2.data.dataset import DatasetDict
 from jaxrl2.networks.encoders import ResNetV2Encoder, ImpalaEncoder
@@ -43,9 +43,8 @@ def _update_jit(
         rng, key = jax.random.split(rng)
         aug_pixels = batched_random_crop(key, batch['observations']['pixels'])
 
-        if color_jitter:
-            rng, key = jax.random.split(rng)
-            aug_pixels = (color_transform(key, aug_pixels.astype(jnp.float32)/255.)*255).astype(jnp.uint8)
+        rng, key = jax.random.split(rng)
+        aug_pixels = (color_transform(key, aug_pixels.astype(jnp.float32)/255.)*255).astype(jnp.uint8)
 
     observations = batch['observations'].copy(add_or_replace={'pixels': aug_pixels})
     batch = batch.copy(add_or_replace={'observations': observations})
