@@ -184,8 +184,11 @@ class PixelIQLLearner(Agent):
         )
 
         critic_def = StateActionEnsemble(hidden_dims, num_qs=2)
-        critic_def = PixelMultiplexerMultiple(
-            encoders=encoder_defs, network=critic_def, latent_dim=latent_dim
+        # critic_def = PixelMultiplexerMultiple(
+        #     encoders=encoder_defs, network=critic_def, latent_dim=latent_dim
+        # )
+        critic_def = PixelMultiplexer(
+            encoder=encoder_def, network=critic_def, latent_dim=latent_dim
         )
 
         critic_params = critic_def.init(critic_key, observations, actions)["params"]
@@ -197,8 +200,14 @@ class PixelIQLLearner(Agent):
         target_critic_params = copy.deepcopy(critic_params)
 
         value_def = StateValue(hidden_dims)
-        value_def = PixelMultiplexerMultiple(
-            encoders=encoder_defs,
+        # value_def = PixelMultiplexerMultiple(
+        #     encoders=encoder_defs,
+        #     network=value_def,
+        #     latent_dim=latent_dim,
+        #     stop_gradient=share_encoder,
+        # )
+        value_def = PixelMultiplexer(
+            encoder=encoder_def,
             network=value_def,
             latent_dim=latent_dim,
             stop_gradient=share_encoder,

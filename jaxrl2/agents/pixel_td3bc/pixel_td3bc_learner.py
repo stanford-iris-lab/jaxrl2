@@ -30,7 +30,7 @@ from jaxrl2.networks.normal_policy import NormalPolicy
 from jaxrl2.networks.values import StateActionEnsemble
 from jaxrl2.types import Params, PRNGKey
 from jaxrl2.utils.target_update import soft_target_update
-
+from jaxrl2.agents.drq.drq_learner import _unpack
 
 class TrainState(train_state.TrainState):
     batch_stats: Any
@@ -41,6 +41,8 @@ def _update_jit(
     target_critic_params: Params, batch: TrainState,
     discount: float, tau: float, alpha: float, color_jitter: bool, share_encoders: bool, aug_next: bool
 ) -> Tuple[PRNGKey, TrainState, TrainState, Params, TrainState, Dict[str,float]]:
+
+    batch = _unpack(batch)
 
     aug_pixels = batch['observations']['pixels']
     aug_next_pixels = batch['next_observations']['pixels']
@@ -114,7 +116,8 @@ class PixelTD3BCLearner(Agent):
                  use_spatial_softmax=True,
                  softmax_temperature=1,
                  aug_next=False,
-                 use_bottleneck=True
+                 use_bottleneck=True,
+                 use_multiplicative_cond=False,
                  ):
         """
         An implementation of the version of Soft-Actor-Critic described in https://arxiv.org/abs/1812.05905
@@ -137,7 +140,7 @@ class PixelTD3BCLearner(Agent):
             encoder_def = Encoder(cnn_features, cnn_strides, cnn_padding)
         elif encoder_type == 'impala':
             print('using impala')
-            encoder_def = ImpalaEncoder()
+            encoder_def = ImpalaEncoder(use_multiplicative_cond=use_multiplicative_cond)
         elif encoder_type == 'impala_small':
             print('using impala small')
             encoder_def = SmallerImpalaEncoder()

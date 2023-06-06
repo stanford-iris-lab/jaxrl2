@@ -75,6 +75,7 @@ class PixelMultiplexer(nn.Module):
             x = self.encoder(observations['pixels'], training,
                              cond_var=observations['task_id'])
         else:
+            # print("observations[\'pixels\'].shape:", observations['pixels'].shape)
             x = self.encoder(observations['pixels'], training)
 
         if self.stop_gradient:
@@ -97,7 +98,7 @@ class PixelMultiplexer(nn.Module):
         #     )
         #     y = nn.LayerNorm()(y)
         #     y = nn.tanh(y)
-        # 
+        #
         #     # x = jnp.concatenate([x, y], axis=-1)
         #     x = x.copy(add_or_replace={'states': y})
         # ###---###

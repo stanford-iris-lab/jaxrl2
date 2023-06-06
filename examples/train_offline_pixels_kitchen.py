@@ -17,8 +17,9 @@ from jaxrl2.agents.pixel_cql import PixelCQLLearner
 from jaxrl2.agents.pixel_iql import PixelIQLLearner
 from jaxrl2.agents.pixel_bc import PixelBCLearner
 from jaxrl2.agents.pixel_ddpm_bc import PixelDDPMBCLearner
-
-#from jaxrl2.agents.cql_encodersep_parallel import PixelCQLLearnerEncoderSepParallel
+from jaxrl2.agents import PixelCQLLearnerEncoderSepParallel
+from jaxrl2.agents import PixelCQLLearnerEncoderSep
+from jaxrl2.agents import PixelTD3BCLearner
 
 import jaxrl2.wrappers.combo_wrappers as wrappers
 from jaxrl2.wrappers.frame_stack import FrameStack
@@ -55,11 +56,15 @@ flags.DEFINE_integer('max_gradient_steps', int(5e5), 'Number of training steps.'
 flags.DEFINE_integer('max_online_gradient_steps', int(5e5), 'Number of training steps.')
 flags.DEFINE_boolean('finetune_online', True, 'Save videos during evaluation.')
 flags.DEFINE_boolean('proprio', False, 'Save videos during evaluation.')
-
+flags.DEFINE_float("take_top", None, "Take top N% trajectories.")
+flags.DEFINE_float(
+    "filter_threshold", None, "Take trajectories with returns above the threshold."
+)
 
 flags.DEFINE_boolean('tqdm', False, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
 flags.DEFINE_boolean('debug', False, 'Set to debug params (shorter).')
+flags.DEFINE_float("discount", 0.99, "Take top N% trajectories.")
 
 #config_flags.DEFINE_config_file(
 #     'config',
@@ -82,11 +87,9 @@ def main(_):
         FLAGS.project = "trash_results"
         # FLAGS.batch_size = 16
         FLAGS.max_gradient_steps = 500
-        # FLAGS.eval_interval = 400
-        FLAGS.eval_interval = 1000
+        FLAGS.eval_interval = 400
         FLAGS.eval_episodes = 2
-        # FLAGS.log_interval = 200
-        FLAGS.log_interval = 1000
+        FLAGS.log_interval = 200
 
         if FLAGS.max_online_gradient_steps > 0:
             FLAGS.max_online_gradient_steps = 500
@@ -137,7 +140,11 @@ def main(_):
     replay_buffer = MemoryEfficientReplayBuffer(env.observation_space, env.action_space, FLAGS.replay_buffer_size)
     replay_buffer.seed(FLAGS.seed)
     replay_buffer_iterator = replay_buffer.get_iterator(sample_args={"batch_size": FLAGS.batch_size, "include_pixels": False})
-    load_data(replay_buffer, env, FLAGS.datadir, FLAGS.task, FLAGS.ep_length, 3, FLAGS.proprio, debug=FLAGS.debug)
+    load_data(replay_buffer, env, FLAGS.datadir, FLAGS.task, FLAGS.ep_length, 3, FLAGS.proprio, FLAGS.discount, debug=FLAGS.debug)
+
+    if FLAGS.take_top is not None or FLAGS.filter_threshold is not None:
+        ds.filter(take_top=FLAGS.take_top, threshold=FLAGS.filter_threshold)
+
     print('Replay buffer loaded')
 
     print('Start offline training')
@@ -182,6 +189,7 @@ def main(_):
     if FLAGS.finetune_online and FLAGS.max_online_gradient_steps > 0:
         print('Start online training')
         observation, done = env.reset(), False
+        transitions = []
         tbar = tqdm.tqdm(range(1, FLAGS.max_online_gradient_steps + 1), smoothing=0.1, disable=not FLAGS.tqdm)
         for i in tbar:
             tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed} (online)]")
@@ -205,16 +213,24 @@ def main(_):
             else:
                 mask = 0.0
 
-            replay_buffer.insert(
-                dict(
-                    observations=observation,
-                    actions=action,
-                    rewards=reward,
-                    masks=mask,
-                    dones=done,
-                    next_observations=next_observation,
-                )
-            )
+            transitions.append(dict(
+                observations=observation,
+                actions=action,
+                rewards=reward,
+                masks=mask,
+                dones=done,
+                next_observations=next_observation,
+            ))
+            # replay_buffer.insert(
+            #     dict(
+            #         observations=observation,
+            #         actions=action,
+            #         rewards=reward,
+            #         masks=mask,
+            #         dones=done,
+            #         next_observations=next_observation,
+            #     )
+            # )
             observation = next_observation
 
             if done:
@@ -222,6 +238,20 @@ def main(_):
                     decode = {"r": "return", "l": "length", "t": "time"}
                     wandb.log({f"training/{decode[k]}": v}, step=i + FLAGS.max_gradient_steps)
                 observation, done = env.reset(), False
+
+
+                reward_to_go = [0]*len(transitions)
+                prev_return = transitions[-1]["rewards"]/(1- FLAGS.discount)
+                for i in range(len(transitions)):
+                    reward_to_go[-i-1] = transitions[-i-1]["rewards"] + FLAGS.discount * prev_return
+                    prev_return = reward_to_go[-i-1]
+
+                for i, transition in enumerate(transitions):
+                    transition["mc_returns"] = reward_to_go[i]
+                    replay_buffer.insert(transition)
+                transitions = []
+
+
 
             batch = next(replay_buffer_iterator)
             if FLAGS.algorithm == "idql":
@@ -298,7 +328,7 @@ def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
         raise ValueError(f"Unsupported environment suite: \"{suite}\".")
     return env
 
-def load_episode(env, episode_file, suite, tasks_list):
+def load_episode(env, episode_file, suite, tasks_list, discount):
     with open(episode_file, 'rb') as f:
         episode = np.load(f, allow_pickle=True)
 
@@ -313,10 +343,19 @@ def load_episode(env, episode_file, suite, tasks_list):
             episode = {k: episode[k] for k in episode.keys() if k not in ['image_128'] and "metadata" not in k and "str" not in episode[k].dtype.name and episode[k].dtype != object and "init_q" not in k and "observation" not in k and "terminal" not in k and "goal" not in k}
             episode["reward"] = rewards
 
+        reward_to_go = np.zeros_like(episode["reward"])
+        prev_return = episode["reward"][-1]/(1- discount)
+        # prev_return = 0
+        for i in range(episode["reward"].shape[0]):
+            reward_to_go[-i-1] = episode["reward"][-i-1] + discount * prev_return
+            prev_return = reward_to_go[-i-1]
 
-    # extra_image_camera_0_rgb
-    # extra_image_camera_1_rgb
-    # extra_image_camera_gripper_rgb
+        episode["mc_returns"] = reward_to_go
+
+
+        # extra_image_camera_0_rgb
+        # extra_image_camera_1_rgb
+        # extra_image_camera_gripper_rgb
 
         if "standardkitchen" in suite:
             # keys = ["extra_image_camera_0_rgb", "extra_image_camera_1_rgb", "extra_image_camera_gripper_rgb"]
@@ -332,7 +371,7 @@ def load_episode(env, episode_file, suite, tasks_list):
 
     return episode
 
-def load_data(replay_buffer, env, offline_dataset_path, task, ep_length, num_stack, proprio, debug=False):
+def load_data(replay_buffer, env, offline_dataset_path, task, ep_length, num_stack, proprio, discount, debug=False):
     suite, task = task.split('_', 1)
     tasks_list = get_task_list(task)
 
@@ -340,7 +379,7 @@ def load_data(replay_buffer, env, offline_dataset_path, task, ep_length, num_sta
     total_transitions = 0
 
     for episode_file in tqdm.tqdm(episode_files, total=len(episode_files), desc="Loading offline data"):
-        episode = load_episode(env, episode_file, suite, tasks_list)
+        episode = load_episode(env, episode_file, suite, tasks_list, discount)
 
         # observation, done = env.reset(), False
         frames = collections.deque(maxlen=num_stack)
@@ -356,6 +395,7 @@ def load_data(replay_buffer, env, offline_dataset_path, task, ep_length, num_sta
         while not done:
             # action = agent.sample_actions(observation)
             action = episode["action"][i]
+            mc_returns = episode["mc_returns"][i]
 
             # next_observation, reward, done, info = env.step(action)
             frames.append(episode["image"][i])
@@ -379,6 +419,7 @@ def load_data(replay_buffer, env, offline_dataset_path, task, ep_length, num_sta
                     masks=mask,
                     dones=done,
                     next_observations=next_observation,
+                    mc_returns=mc_returns,
                 )
             )
             observation = next_observation
@@ -408,7 +449,7 @@ export MUJOCO_GL="egl"
 
 XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
 --task "standardkitchen_outofdistribution" \
---datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/kitchen2/kitchen_demos_multitask_lexa_view_extra_images_npz/friday_kettle_bottomknob_hinge_slide_first5 \
+--datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/kitchen2/kitchen_demos_multitask_lexa_view_and_wrist_npz/ \
 --tqdm=true \
 --project vd5rl_kitchen \
 --algorithm cql \

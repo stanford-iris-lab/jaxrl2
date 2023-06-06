@@ -54,6 +54,7 @@ class ReplayBuffer(Dataset):
             rewards=np.empty((capacity,), dtype=np.float32),
             masks=np.empty((capacity,), dtype=np.float32),
             dones=np.empty((capacity,), dtype=bool),
+            mc_returns=np.empty((capacity,), dtype=np.float32),
         )
 
         super().__init__(dataset_dict)

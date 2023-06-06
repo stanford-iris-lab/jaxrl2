@@ -114,6 +114,7 @@ class AdroitHand:
         self._camera_angle = camera_angle
 
         self.viewer = mujoco_py.MjRenderContextOffscreen(self._env.sim, -1)
+        # self.viewer = mujoco_py.MjRenderContextOffscreen(self._env.sim, 0)
         self.setup_viewer(self.viewer, camera_angle)
 
         # self.setup_viewer()
@@ -435,7 +436,8 @@ class Kitchen:
         # from .RPL.adept_envs import adept_envs
         # sys.path.append("/workdisk/code/relay-policy-learning/adept_envs")
         # sys.path.append("../../relay-policy-learning/adept_envs")
-        sys.path.append("../../finetuning_benchmark/benchmark/domains/relay-policy-learning/adept_envs")
+        # sys.path.append("../../finetuning_benchmark/benchmark/domains/relay-policy-learning/adept_envs")
+        sys.path.append("/iris/u/khatch/vd5rl/finetuning_benchmark/benchmark/domains/relay-policy-learning/adept_envs")
 
         import adept_envs
         self._env = gym.make('kitchen_relax_rpl-v1')

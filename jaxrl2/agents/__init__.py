@@ -9,3 +9,4 @@ from jaxrl2.agents.cql_encodersep_parallel import PixelCQLLearnerEncoderSepParal
 from jaxrl2.agents.cql_encodersep import PixelCQLLearnerEncoderSep
 from jaxrl2.agents.pixel_ddpm_bc import PixelDDPMBCLearner ###===###
 from jaxrl2.agents.pixel_idql.pixel_idql_learner import PixelIDQLLearner ###===###
+from jaxrl2.agents.pixel_td3bc import PixelTD3BCLearner

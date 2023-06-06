@@ -21,6 +21,8 @@ import numpy as np
 from jaxrl2.networks.encoders import ImpalaEncoder
 # from jaxrl2.networks.pixel_multiplexer import PixelMultiplexer as PixelMultiplexerJaxRL2
 
+from flax.training import checkpoints ###===### ###---###
+
 def _unpack(batch):
     # Assuming that if next_observation is missing, it's combined with observation:
     for pixel_key in batch["observations"].keys():
@@ -55,6 +57,18 @@ class Agent(struct.PyTreeNode):
             self.rng, self.actor.apply_fn, self.actor.params, observations
         )
         return np.asarray(actions), self.replace(rng=new_rng)
+
+    ###===###
+    @property
+    def _save_dict(self):
+        raise NotImplementedError
+
+    def save_checkpoint(self, dir, step, keep_every_n_steps):
+        checkpoints.save_checkpoint(dir, self._save_dict, step, prefix='checkpoint', overwrite=False, keep_every_n_steps=keep_every_n_steps)
+
+    def restore_checkpoint(self, dir):
+        raise NotImplementedError
+    ###---###
 
 class PixelDDPMBCLearner(Agent):
     score_model: TrainState
@@ -331,12 +345,37 @@ class PixelDDPMBCLearner(Agent):
     #     actions, rng = ddpm_sampler(self.score_model.apply_fn, score_params, self.T, rng, self.act_dim, observations, self.alphas, self.alpha_hats, self.betas, self.ddpm_temperature, self.M, self.clip_sampler)
     #
     #     return jnp.array(actions.squeeze()), self.replace(rng=rng)
-    # @jax.jit
+    @jax.jit
     def eval_actions(self, observations: jnp.ndarray):
         rng = self.rng
 
-        observations = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0).repeat(self.N, axis = 0), observations) #Add dim
+        # observations = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0).repeat(self.N, axis = 0), observations) #Add dim
+        observations = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0).repeat(1, axis = 0), observations) #Add dim
         score_params = self.target_score_model.params
         actions, rng = ddpm_sampler(self.score_model.apply_fn, score_params, self.T, rng, self.act_dim, observations, self.alphas, self.alpha_hats, self.betas, self.ddpm_temperature, self.M, self.clip_sampler)
 
         return jnp.array(actions.squeeze()), self.replace(rng=rng)
+
+    ###===###
+    @property
+    def _save_dict(self):
+        save_dict = {
+            'actor': self._actor,
+        }
+        return save_dict
+
+    def restore_checkpoint(self, dir):
+        if os.path.isfile(dir):
+            checkpoint_file = dir
+        else:
+            def sort_key_fn(checkpoint_file):
+                chkpt_name = checkpoint_file.split("/")[-1]
+                return int(chkpt_name[len("checkpoint"):])
+
+            checkpoint_files = glob(os.path.join(dir, "checkpoint*"))
+            checkpoint_files = sorted(checkpoint_files, key=sort_key_fn)
+            checkpoint_file = checkpoint_files[-1]
+
+        output_dict = checkpoints.restore_checkpoint(checkpoint_file, self._save_dict)
+        self._actor = output_dict['actor']
+    ###---###

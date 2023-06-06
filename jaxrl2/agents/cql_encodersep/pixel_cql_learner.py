@@ -37,6 +37,9 @@ from jaxrl2.agents.drq.augmentations import batched_random_crop, color_transform
 from jaxrl2.agents.drq.drq_learner import _unpack
 from jaxrl2.agents.drq.drq_learner import _share_encoder
 from jaxrl2.networks.encoders.networks import Encoder, PixelMultiplexer, PixelMultiplexerEncoder, PixelMultiplexerDecoder
+# from jaxrl2.networks.encoders.networks import Encoder, PixelMultiplexerEncoder, PixelMultiplexerDecoder
+# from jaxrl2.networks.pixel_multiplexer import PixelMultiplexer
+
 from jaxrl2.networks.encoders.impala_encoder import ImpalaEncoder
 from jaxrl2.networks.encoders.resnet_encoderv1 import ResNet18, ResNet34, ResNetSmall
 from jaxrl2.networks.encoders.resnet_encoderv2 import ResNetV2Encoder
@@ -72,6 +75,8 @@ def _update_jit(
     # Comment out when using the naive replay buffer
     batch = _unpack(batch)
 
+    # print("batch[\'observations\'][\'pixels\'].shape:", batch['observations']['pixels'].shape)
+
     aug_pixels = batch['observations']['pixels']
     aug_next_pixels = batch['next_observations']['pixels']
 
@@ -86,6 +91,8 @@ def _update_jit(
 
     observations = batch['observations'].copy(add_or_replace={'pixels': aug_pixels})
     batch = batch.copy(add_or_replace={'observations': observations})
+
+    # print("batch[\'observations\'][\'pixels\'].shape:", batch['observations']['pixels'].shape)
 
     key, rng = jax.random.split(rng)
     if True:
@@ -174,6 +181,7 @@ class PixelCQLLearnerEncoderSep(Agent):
                  method_type:int=0,
                  cross_norm:bool = False,
                  use_spatial_softmax=True,
+                 use_multiplicative_cond=False,
                  softmax_temperature=-1,
                  share_encoders=False,
                  color_jitter=True,
@@ -221,11 +229,12 @@ class PixelCQLLearnerEncoderSep(Agent):
         rng, actor_key, critic_key, temp_key = jax.random.split(rng, 4)
         rng, noise1_key, noise2_key, noise3_key, drop1_key, drop2_key, drop3_key = jax.random.split(rng, 7)
 
+
         if encoder_type == 'small':
             encoder_def = Encoder(cnn_features, cnn_strides, cnn_padding)
         elif encoder_type == 'impala':
             print('using impala')
-            encoder_def = ImpalaEncoder()
+            encoder_def = ImpalaEncoder(use_multiplicative_cond=use_multiplicative_cond)
         elif encoder_type == 'resnet_small':
             encoder_def = ResNetSmall(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature)
         elif encoder_type == 'resnet_18_v1':
@@ -250,7 +259,7 @@ class PixelCQLLearnerEncoderSep(Agent):
             policy_encoder_def = Encoder(cnn_features, cnn_strides, cnn_padding)
         elif policy_encoder_type == 'impala':
             print('using impala')
-            policy_encoder_def = ImpalaEncoder()
+            policy_encoder_def = ImpalaEncoder(use_multiplicative_cond=use_multiplicative_cond)
         elif policy_encoder_type == 'resnet_small':
             policy_encoder_def = ResNetSmall(norm=encoder_norm, use_spatial_softmax=use_spatial_softmax, softmax_temperature=softmax_temperature)
         elif policy_encoder_type == 'resnet_18_v1':
