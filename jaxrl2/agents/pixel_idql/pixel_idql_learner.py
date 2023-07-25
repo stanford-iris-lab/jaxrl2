@@ -15,8 +15,17 @@ from jaxrl2.networks.jaxrl5_networks import (MLP, Ensemble, StateActionValue, St
                                           DDPM, FourierFeatures, cosine_beta_schedule, PixelMultiplexer,
                                           ddpm_sampler, MLPResNet, get_weight_decay_mask, vp_beta_schedule)
 from jaxrl2.networks.jaxrl5_networks.encoders import D4PGEncoder, ResNetV2Encoder
+from jaxrl2.networks.encoders.impala_encoder import ImpalaEncoder
 from jaxrl2.types import Params, PRNGKey
 import numpy as np
+
+# from jaxrl2.agents.idql.ddpm_iql_learner import compute_q
+@partial(jax.jit, static_argnames=('critic_fn'))
+def compute_q(critic_fn, critic_params, observations, actions):
+    q_values = critic_fn({'params': critic_params}, observations, actions)
+    q_values = q_values.min(axis=0)
+    return q_values
+
 
 def expectile_loss(diff, expectile=0.8):
     weight = jnp.where(diff > 0, expectile, (1 - expectile))
@@ -125,6 +134,7 @@ class PixelIDQLLearner(Agent):
         expectile: float = 0.7,
         num_qs: int = 2,
         decay_steps: Optional[int] = None,
+        use_multiplicative_cond=False,
     ):
         """
         An implementation of the version of Soft-Actor-Critic described in https://arxiv.org/abs/1812.05905
@@ -185,6 +195,9 @@ class PixelIDQLLearner(Agent):
                 strides=cnn_strides,
                 padding=cnn_padding,
             )
+        elif encoder == 'impala':
+            print('using impala')
+            encoder_cls = partial(ImpalaEncoder, use_multiplicative_cond=use_multiplicative_cond)
         elif encoder == "resnet":
             encoder_cls = partial(ResNetV2Encoder, stage_sizes=(2, 2, 2, 2))
 
@@ -194,6 +207,7 @@ class PixelIDQLLearner(Agent):
             latent_dim=latent_dim,
             pixel_keys=pixel_keys,
             depth_keys=depth_keys,
+            skip_normalization=True,
         )
         actor_params = actor_cls.init(actor_key, observations, actions, time)["params"]
         actor = TrainState.create(
@@ -241,6 +255,7 @@ class PixelIDQLLearner(Agent):
             latent_dim=latent_dim,
             pixel_keys=pixel_keys,
             depth_keys=depth_keys,
+            skip_normalization=True,
         )
         critic_params = critic_def.init(critic_key, observations, actions)["params"]
         critic = TrainState.create(
@@ -262,6 +277,7 @@ class PixelIDQLLearner(Agent):
             latent_dim=latent_dim,
             pixel_keys=pixel_keys,
             depth_keys=depth_keys,
+            skip_normalization=True,
         )
         value_params = value_def.init(value_key, observations)["params"]
         value = TrainState.create(
@@ -477,9 +493,12 @@ class PixelIDQLLearner(Agent):
     def eval_actions(self, observations: jnp.ndarray):
         rng = self.rng
 
-        assert len(observations.shape) == 1
+        assert len(observations["states"].shape) == 1
         observations = jax.device_put(observations)
-        observations = jnp.expand_dims(observations, axis = 0).repeat(self.N, axis = 0)
+
+        # observations = jnp.expand_dims(observations, axis = 0).repeat(self.N, axis = 0)
+        # observations = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0).repeat(self.N, axis = 0), observations)
+        observations = jax.tree_map(lambda x: jnp.expand_dims(x, axis=0).repeat(64, axis = 0), observations)
 
         score_params = self.target_score_model.params
         actions, rng = ddpm_sampler(self.score_model.apply_fn, score_params, self.T, rng, self.act_dim, observations, self.alphas, self.alpha_hats, self.betas, self.ddpm_temperature, self.M, self.clip_sampler)
@@ -494,3 +513,6 @@ class PixelIDQLLearner(Agent):
     @jax.jit
     def sample_actions(self, observations: jnp.ndarray):
         return self.eval_actions(observations) #Just take argmax for online finetuning
+
+    def save_checkpoint(self, *args, **kwargs):
+        pass

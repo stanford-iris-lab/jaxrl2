@@ -88,8 +88,8 @@ def main(_):
         FLAGS.project = "trash_results"
         # FLAGS.batch_size = 16
         FLAGS.max_gradient_steps = 500
-        FLAGS.eval_interval = 200
-        FLAGS.online_eval_interval = 200
+        FLAGS.eval_interval = 400
+        FLAGS.online_eval_interval = 400
         FLAGS.eval_episodes = 2
         FLAGS.log_interval = 300
 
@@ -189,7 +189,7 @@ def main(_):
                     wandb.log({f'training/{k}': v}, step=i)
                     # print(k, v)
 
-        if i % FLAGS.eval_interval == 0:
+        if i % FLAGS.eval_interval == 0 or i == 1000:
             eval_info = evaluate_kitchen(agent,
                                  eval_env,
                                  num_episodes=FLAGS.eval_episodes,
@@ -292,7 +292,7 @@ def main(_):
                         wandb.log({f'training/{k}': v}, step=i + FLAGS.max_gradient_steps)
                         # print(k, v)
 
-            if i % FLAGS.online_eval_interval == 0:
+            if i % FLAGS.online_eval_interval == 0 or i == 1000:
                 eval_info = evaluate_kitchen(agent,
                                      eval_env,
                                      num_episodes=FLAGS.eval_episodes,

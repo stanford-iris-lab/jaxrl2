@@ -290,7 +290,6 @@ def get_td3bc_config():
 
     return config
 
-
 def get_ddpm_bc_config():
     config = ml_collections.ConfigDict()
 
@@ -308,6 +307,32 @@ def get_ddpm_bc_config():
     config.dropout_rate = config_dict.placeholder(float)
 
     return config
+
+def get_idql_config():
+    config = ml_collections.ConfigDict()
+
+    config.actor_lr = 3e-4
+    config.critic_lr = 3e-4
+    config.value_lr = 3e-4
+
+    config.hidden_dims = (256, 256)
+    config.latent_dim = 50
+
+    config.discount = 0.99
+
+    config.expectile = 0.7  # The actual tau for expectiles.
+    config.cosine_decay = True
+
+    # config.encoder = "resnet"
+    config.encoder = "impala"
+    config.use_multiplicative_cond = False
+
+    config.tau = 0.005
+    config.use_layer_norm = True
+    config.dropout_rate = 0.1
+
+    return config
+
 
 def get_config(config_string):
     possible_structures = {
@@ -331,6 +356,9 @@ def get_config(config_string):
         ),
         "ddpm_bc": ml_collections.ConfigDict(
             {"model_constructor": "PixelDDPMBCLearner", "model_config": get_ddpm_bc_config()}
+        ),
+        "idql": ml_collections.ConfigDict(
+            {"model_constructor": "PixelIDQLLearner", "model_config": get_idql_config()}
         ),
     }
     return possible_structures[config_string]

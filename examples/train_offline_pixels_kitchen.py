@@ -20,6 +20,7 @@ from jaxrl2.agents.pixel_ddpm_bc import PixelDDPMBCLearner
 from jaxrl2.agents import PixelCQLLearnerEncoderSepParallel
 from jaxrl2.agents import PixelCQLLearnerEncoderSep
 from jaxrl2.agents import PixelTD3BCLearner
+from jaxrl2.agents import PixelIDQLLearner
 
 import jaxrl2.wrappers.combo_wrappers as wrappers
 from jaxrl2.wrappers.frame_stack import FrameStack
@@ -165,7 +166,7 @@ def main(_):
                     wandb.log({f'training/{k}': v}, step=i)
                     # print(k, v)
 
-        if i % FLAGS.eval_interval == 0:
+        if i % FLAGS.eval_interval == 0 or i == 1000:
             eval_info = evaluate_kitchen(agent,
                                  eval_env,
                                  num_episodes=FLAGS.eval_episodes,
@@ -270,7 +271,7 @@ def main(_):
                         wandb.log({f'training/{k}': v}, step=i + FLAGS.max_gradient_steps)
                         # print(k, v)
 
-            if i % FLAGS.online_eval_interval == 0:
+            if i % FLAGS.online_eval_interval == 0 or i == 1000:
                 eval_info = evaluate_kitchen(agent,
                                      eval_env,
                                      num_episodes=FLAGS.eval_episodes,

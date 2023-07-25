@@ -265,7 +265,7 @@ def get_td3bc_config():
     # config.cnn_groups = 1
     config.latent_dim = 50
     config.hidden_dims = (256, 256)
-    
+
     config.alpha = 2.0
 
     # config.actor_lr = 3e-4
@@ -324,7 +324,10 @@ def get_idql_config():
     config.expectile = 0.7  # The actual tau for expectiles.
     config.cosine_decay = True
 
-    config.encoder = "resnet"
+    # config.encoder = "resnet"
+    config.encoder = "impala"
+    config.use_multiplicative_cond = False
+
     config.tau = 0.005
     config.use_layer_norm = True
     config.dropout_rate = 0.1
