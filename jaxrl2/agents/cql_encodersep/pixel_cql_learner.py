@@ -43,6 +43,7 @@ from jaxrl2.networks.encoders.networks import Encoder, PixelMultiplexer, PixelMu
 from jaxrl2.networks.encoders.impala_encoder import ImpalaEncoder
 from jaxrl2.networks.encoders.resnet_encoderv1 import ResNet18, ResNet34, ResNetSmall
 from jaxrl2.networks.encoders.resnet_encoderv2 import ResNetV2Encoder
+from jaxrl2.networks.encoders import D4PGEncoder
 from jaxrl2.data.dataset import DatasetDict
 from jaxrl2.networks.normal_policy import NormalPolicy
 from jaxrl2.networks.values import StateActionEnsemble, StateValue
@@ -252,6 +253,8 @@ class PixelCQLLearnerEncoderSep(Agent):
         elif encoder_type == 'mae':
             from jaxrl2.networks import mae, loading_utils
             encoder_def = mae.MAEEncoder()
+        elif encoder_type == "d4pg":
+            encoder_def = D4PGEncoder(cnn_features, cnn_filters, cnn_strides, cnn_padding)
         else:
             raise ValueError('encoder type not found!')
 
@@ -279,10 +282,12 @@ class PixelCQLLearnerEncoderSep(Agent):
         elif policy_encoder_type == 'mae':
             from jaxrl2.networks import mae, loading_utils
             policy_encoder_def = mae.MAEEncoder()
+        elif policy_encoder_type == "d4pg":
+            policy_encoder_def = D4PGEncoder(cnn_features, cnn_filters, cnn_strides, cnn_padding)
         else:
             raise ValueError('encoder type not found!')
 
-        policy_def = LearnedStdTanhNormalPolicy(hidden_dims,action_dim, dropout_rate=dropout_rate)
+        policy_def = LearnedStdTanhNormalPolicy(hidden_dims, action_dim, dropout_rate=dropout_rate)
 
         actor_def = PixelMultiplexer(encoder=policy_encoder_def,
                                      network=policy_def,

@@ -5,7 +5,7 @@ import flax.linen as nn
 import jax.numpy as jnp
 from tensorflow_probability.substrates import jax as tfp
 
-from jaxrl2.networks import MLP
+from jaxrl2.networks import MLP, MLPRepeatPerLayer ###===### ###---###
 from jaxrl2.networks.constants import default_init, xavier_init
 
 
@@ -64,9 +64,15 @@ class NormalTanhPolicy(nn.Module):
     def __call__(self,
                  observations: jnp.ndarray,
                  training: bool = False) -> distrax.Distribution:
-        outputs = MLP(self.hidden_dims,
+        # outputs = MLP(self.hidden_dims,
+        #               activate_final=True,
+        #               dropout_rate=self.dropout_rate,
+        #               init_scale=self.mlp_init_scale)(observations,
+        #                                               training=training)
+        outputs = MLPRepeatPerLayer(self.hidden_dims, ###===### ###---###
                       activate_final=True,
                       dropout_rate=self.dropout_rate,
+                      key_for_repeat="states",
                       init_scale=self.mlp_init_scale)(observations,
                                                       training=training)
 

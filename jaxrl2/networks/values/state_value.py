@@ -3,7 +3,7 @@ from typing import Callable, Sequence
 import flax.linen as nn
 import jax.numpy as jnp
 
-from jaxrl2.networks.mlp import MLP
+from jaxrl2.networks.mlp import MLP, MLPRepeatPerLayer ###===### ###---###
 
 
 class StateValue(nn.Module):
@@ -14,9 +14,15 @@ class StateValue(nn.Module):
     def __call__(self,
                  observations: jnp.ndarray,
                  training: bool = False) -> jnp.ndarray:
-        critic = MLP((*self.hidden_dims, 1),
+        # critic = MLP((*self.hidden_dims, 1),
+        #              activations=self.activations)(observations,
+        #                                            training=training)
+
+        critic = MLPRepeatPerLayer((*self.hidden_dims, 1), ###===### ###---###
+                     key_for_repeat="states",
                      activations=self.activations)(observations,
                                                    training=training)
+
         return jnp.squeeze(critic, -1)
 
 

@@ -87,7 +87,7 @@ class PixelMultiplexer(nn.Module):
         # print(f"x.shape:", x.shape)
 
 
-
+        # assert "states" not in observations, f"{observations.keys()}" ###DEBUG###
         if "states" in observations:
             y = nn.Dense(self.latent_dim, kernel_init=default_init())(
                 observations["states"]
@@ -95,8 +95,9 @@ class PixelMultiplexer(nn.Module):
             y = nn.LayerNorm()(y)
             y = nn.tanh(y)
 
-            x = jnp.concatenate([x, y], axis=-1)
-
+            # x = jnp.concatenate([x, y], axis=-1) ###===###
+            x = FrozenDict({"x":x, "states":y}) ###---###
+            # print("y:", y)
         if actions is None:
             return self.network(x, training=training)
         else:

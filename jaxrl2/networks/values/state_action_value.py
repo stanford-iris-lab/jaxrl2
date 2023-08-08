@@ -5,7 +5,7 @@ import jax.numpy as jnp
 
 import jax
 
-from jaxrl2.networks.mlp import MLP
+from jaxrl2.networks.mlp import MLP, MLPRepeatPerLayer, MLPActionSepRepeatPerLayer ###===### ###---###
 from jaxrl2.networks.mlp import MLPActionSep
 from jaxrl2.networks.constants import default_init
 
@@ -21,6 +21,7 @@ PrecisionLike = Union[None, str, jax.lax.Precision, Tuple[str, str],
 
 default_kernel_init = nn.initializers.lecun_normal()
 
+import flax
 
 
 class OptionalStopGradientDense(nn.Module):
@@ -68,7 +69,7 @@ class AuxStateActionValue(nn.Module):
     use_pixel_sep: bool = False
 
     @nn.compact
-    def __call__(self, observations: jnp.ndarray, 
+    def __call__(self, observations: jnp.ndarray,
                  actions: jnp.ndarray,
                  training: bool=False,
                  version_type: int = 0):
@@ -105,19 +106,39 @@ class StateActionValue(nn.Module):
                  observations: jnp.ndarray,
                  actions: jnp.ndarray,
                  training: bool = False):
-        inputs = {'states': observations, 'actions': actions}
+
+        if isinstance(observations, flax.core.frozen_dict.FrozenDict): ###===### ###---###
+            inputs = observations.copy({"actions":actions})
+            # inputs["actions"] = actions
+        else:
+            inputs = {'states': observations, 'actions': actions}
+
         print ('Use action sep in StateActionvalue: ', self.use_action_sep)
         print ('Use normalized features in state action value: ', self.use_normalized_features)
         if self.use_action_sep:
-            critic = MLPActionSep(
+            # critic = MLPActionSep(
+            #     (*self.hidden_dims, 1),
+            #     activations=self.activations,
+            #     use_normalized_features=self.use_normalized_features,
+            #     use_pixel_sep=self.use_pixel_sep)(inputs, training=training)
+
+            critic = MLPActionSepRepeatPerLayer( ###===### ###---###
                 (*self.hidden_dims, 1),
                 activations=self.activations,
+                key_for_repeat="states",
                 use_normalized_features=self.use_normalized_features,
                 use_pixel_sep=self.use_pixel_sep)(inputs, training=training)
+
+
         else:
-            critic = MLP((*self.hidden_dims, 1),
+            # critic = MLP((*self.hidden_dims, 1),
+            #             activations=self.activations,
+            #             use_normalized_features=self.use_normalized_features)(inputs, training=training)
+            critic = MLPRepeatPerLayer((*self.hidden_dims, 1), ###===### ###---###
                         activations=self.activations,
+                        key_for_repeat="states",
                         use_normalized_features=self.use_normalized_features)(inputs, training=training)
+
         return jnp.squeeze(critic, -1)
 
 def cont2disc(values: jnp.ndarray, n: int) -> jnp.ndarray:
@@ -136,7 +157,7 @@ def disc2cont(values: jnp.ndarray, n: int) -> jnp.ndarray:
 def quantize(values: jnp.ndarray, n: int) -> jnp.ndarray:
     values = cont2disc(values, n)
     return disc2cont(values, n)
-    
+
 class StateActionValueAutoregressiveV1(nn.Module):
     hidden_dims: Sequence[int]
     activations: Callable[[jnp.ndarray], jnp.ndarray] = nn.relu
@@ -155,9 +176,9 @@ class StateActionValueAutoregressiveV1(nn.Module):
                  ):
         print ('Use action sep in StateActionvalue: ', self.use_action_sep)
         print ('Use normalized features in state action value: ', self.use_normalized_features)
-        
+
         actions = cont2disc(actions, self.num_components)
-        
+
         if self.generate_weights:
             # observation conditioned weights for each action dimension
             inputs = {'states': observations}
@@ -168,12 +189,12 @@ class StateActionValueAutoregressiveV1(nn.Module):
                 use_pixel_sep=self.use_pixel_sep)(inputs, training=training)
         else:
             weights = jnp.ones_like(actions)
-        
+
         # normalize weights
         weights = jnp.exp(weights)/jnp.sum(jnp.exp(weights), axis=-1, keepdims=True)
-        
+
         autoregressive_mlps = []
-        
+
         for i in range(actions.shape[-1]):
             if self.use_action_sep:
                 curr_mlp = MLPActionSep(
@@ -186,7 +207,7 @@ class StateActionValueAutoregressiveV1(nn.Module):
                             activations=self.activations,
                             use_normalized_features=self.use_normalized_features)
             autoregressive_mlps.append(curr_mlp)
-        
+
         if compute_lse:
             # logsumexp for cql loss
             # not sure if I should compute the lse for the entire action or just till the action dimension that is varied
@@ -207,11 +228,11 @@ class StateActionValueAutoregressiveV1(nn.Module):
                 action_so_far = actions[:,:i]
                 inputs = {'states': observations, 'actions': action_so_far}
                 print('action so far: ', action_so_far.shape)
-                
+
                 critic =autoregressive_mlps[i](inputs, training=training)
                 q_val_so_far += jnp.squeeze(critic, -1) * weights[:,i]
             return q_val_so_far
-        
+
 class StateActionValueAutoregressiveV2(nn.Module):
     hidden_dims: Sequence[int]
     activations: Callable[[jnp.ndarray], jnp.ndarray] = nn.relu
@@ -232,10 +253,10 @@ class StateActionValueAutoregressiveV2(nn.Module):
                  ):
         print ('Use action sep in StateActionvalue: ', self.use_action_sep)
         print ('Use normalized features in state action value: ', self.use_normalized_features)
-        
+
         actions = cont2disc(actions, self.num_components)
         context = jnp.zeros((actions.shape[0], self.context_vector_size)) # B x D
-        
+
         autoregressive_mlps = []
         if self.weight_sharing:
             if self.use_action_sep:
@@ -249,7 +270,7 @@ class StateActionValueAutoregressiveV2(nn.Module):
                             activations=self.activations,
                             use_normalized_features=self.use_normalized_features)
             autoregressive_mlps = [curr_mlp] * actions.shape[-1]
-        else:   
+        else:
             for i in range(actions.shape[-1]):
                 if self.use_action_sep:
                     curr_mlp = MLPActionSep(
@@ -262,9 +283,9 @@ class StateActionValueAutoregressiveV2(nn.Module):
                                 activations=self.activations,
                                 use_normalized_features=self.use_normalized_features)
                 autoregressive_mlps.append(curr_mlp)
-        
+
         output_proj = MLP((1,))
-        
+
         if compute_lse:
             q_val_so_far = jnp.zeros((actions.shape[0], actions.shape[-1]*self.num_components))
             which_qval = 0
@@ -272,20 +293,20 @@ class StateActionValueAutoregressiveV2(nn.Module):
                 curr_action = actions[:,i]
                 for j in range(self.num_components):
                     which_component = jnp.array([[j]]*actions.shape[0]) # batch_size x 1
-                    inputs = {'states': observations, 'actions': which_component, 'context': context}    
+                    inputs = {'states': observations, 'actions': which_component, 'context': context}
                     curr_context = autoregressive_mlps[i](inputs, training=training) + context
                     q_val_so_far = q_val_so_far.at[:, i].set(output_proj(curr_context))
                     which_qval += 1
-                
+
                 curr_action = actions[:,i]
                 inputs = {'states': observations, 'actions': curr_action, 'context': context}
                 context = autoregressive_mlps[i](inputs, training=training) + context
-                
+
             return jax.scipy.special.logsumexp(q_val_so_far, axis=-1)
         else:
             for i in range(1,actions.shape[-1]):
                 curr_action = actions[:,i]
                 inputs = {'states': observations, 'actions': curr_action, 'context': context}
-                
+
                 context = autoregressive_mlps[i](inputs, training=training) + context
             return output_proj(context)

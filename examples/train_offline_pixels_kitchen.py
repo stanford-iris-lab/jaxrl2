@@ -66,6 +66,9 @@ flags.DEFINE_boolean('tqdm', False, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
 flags.DEFINE_boolean('debug', False, 'Set to debug params (shorter).')
 flags.DEFINE_float("discount", 0.99, "Take top N% trajectories.")
+flags.DEFINE_integer("im_size", 128, "Image size.")
+flags.DEFINE_boolean("use_wrist_cam", True, "Use the wrist cam?")
+flags.DEFINE_string('camera_ids', "12", 'Eg: 0,1')
 
 #config_flags.DEFINE_config_file(
 #     'config',
@@ -73,16 +76,28 @@ flags.DEFINE_float("discount", 0.99, "Take top N% trajectories.")
 #     'File path to the training hyperparameter configuration.',
 #     lock_config=False)
 
+import sys
+algname = sys.argv[sys.argv.index("--algorithm") + 1]
+print("algname:", algname)
+assert algname in ["bc", "iql", "cql_slow", "cql", "calql", "td3bc", "ddpm_bc", "idql"], f"algname: {algname}"
+
+config_flags.DEFINE_config_file(
+    'config',
+    # f'./configs/offline_pixels_standardkitchen_config.py:{FLAGS.algorithm}', ###DEBUG###
+    f'./configs/offline_pixels_standardkitchen_debug_config.py:{algname}',
+    'File path to the training hyperparameter configuration.',
+    lock_config=False)
 
 def main(_):
     from jax.lib import xla_bridge
     print('DEVICE:', xla_bridge.get_backend().platform)
 
-    config_flags.DEFINE_config_file(
-        'config',
-        f'./configs/offline_pixels_standardkitchen_config.py:{FLAGS.algorithm}',
-        'File path to the training hyperparameter configuration.',
-        lock_config=False)
+    # config_flags.DEFINE_config_file(
+    #     'config',
+    #     # f'./configs/offline_pixels_standardkitchen_config.py:{FLAGS.algorithm}', ###DEBUG###
+    #     f'./configs/offline_pixels_standardkitchen_debug_config.py:{FLAGS.algorithm}',
+    #     'File path to the training hyperparameter configuration.',
+    #     lock_config=False)
 
     if FLAGS.debug:
         FLAGS.project = "trash_results"
@@ -111,9 +126,9 @@ def main(_):
 
     wandb.config.update(FLAGS)
 
-    env = make_env(FLAGS.task, FLAGS.ep_length, FLAGS.action_repeat, FLAGS.proprio, FLAGS.camera_angle)
+    env = make_env(FLAGS.task, FLAGS.ep_length, FLAGS.action_repeat, FLAGS.proprio, camera_angle=FLAGS.camera_angle, im_size=FLAGS.im_size, camera_ids=FLAGS.camera_ids, use_wrist_cam=FLAGS.use_wrist_cam)
     env = gym.wrappers.RecordEpisodeStatistics(env, deque_size=1)
-    eval_env = make_env(FLAGS.task, FLAGS.ep_length, FLAGS.action_repeat, FLAGS.proprio, FLAGS.camera_angle)
+    eval_env = make_env(FLAGS.task, FLAGS.ep_length, FLAGS.action_repeat, FLAGS.proprio, camera_angle=FLAGS.camera_angle, im_size=FLAGS.im_size, camera_ids=FLAGS.camera_ids, use_wrist_cam=FLAGS.use_wrist_cam)
 
     print('Environment Created')
     kwargs = dict(FLAGS.config.model_config)
@@ -300,7 +315,7 @@ def get_task_list(task):
 
     return tasks_list
 
-def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
+def make_env(task, ep_length, action_repeat, proprio, camera_angle=None, im_size=128, camera_ids="0,1", use_wrist_cam=True):
     suite, task = task.split('_', 1)
 
     tasks_list = get_task_list(task)
@@ -310,17 +325,19 @@ def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
         assert action_repeat == 1
         # tasks_list = task.split("+")
 
-        env = wrappers.Kitchen(task=tasks_list, size=(64, 64), proprio=proprio, log_only_target_tasks=True)
+        env = wrappers.Kitchen(task=tasks_list, size=(im_size, im_size), proprio=proprio, log_only_target_tasks=True)
         env = wrappers.ActionRepeat(env, action_repeat)
         env = wrappers.NormalizeActions(env)
         env = wrappers.TimeLimit(env, ep_length)
         env = FrameStack(env, num_stack=3)
     elif "standardkitchen" in suite:
+        camera_ids = camera_ids.split(",")
+        camera_ids = [int(camera_id) for camera_id in camera_ids]
         # assert proprio
         assert action_repeat == 1
         # tasks_list = task.split("+")
         # env = wrappers.KitchenMultipleViews(task=tasks_list, size=(128, 128), camera_ids=[0, 1], proprio=proprio, log_only_target_tasks=True)
-        env = wrappers.KitchenMultipleViews(task=tasks_list, size=(64, 64), camera_ids=[12], proprio=proprio, log_only_target_tasks=True)
+        env = wrappers.KitchenMultipleViews(task=tasks_list, size=(im_size, im_size), camera_ids=camera_ids, use_wrist_cam=use_wrist_cam, proprio=proprio, log_only_target_tasks=True)
         env = wrappers.ActionRepeat(env, action_repeat)
         env = wrappers.NormalizeActions(env)
         env = wrappers.TimeLimit(env, ep_length)

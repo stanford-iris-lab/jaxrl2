@@ -4,7 +4,7 @@ import distrax
 import flax.linen as nn
 import jax.numpy as jnp
 
-from jaxrl2.networks import MLP
+from jaxrl2.networks import MLP, MLPRepeatPerLayer ###===### ###---###
 from jaxrl2.networks.constants import default_init
 
 class LearnedStdNormalPolicy(nn.Module):
@@ -18,10 +18,17 @@ class LearnedStdNormalPolicy(nn.Module):
     def __call__(self,
                  observations: jnp.ndarray,
                  training: bool = False) -> distrax.Distribution:
-        outputs = MLP(self.hidden_dims,
+        # outputs = MLP(self.hidden_dims,
+        #               activate_final=True,
+        #               dropout_rate=self.dropout_rate)(observations,
+        #                                               training=training)
+        outputs = MLPRepeatPerLayer(self.hidden_dims,
                       activate_final=True,
+                      key_for_repeat="states",
                       dropout_rate=self.dropout_rate)(observations,
                                                       training=training)
+
+
 
         means = nn.Dense(self.action_dim, kernel_init=default_init(1e-2))(outputs)
 
@@ -82,7 +89,7 @@ class LearnedStdTanhNormalPolicy(nn.Module):
     def __call__(self,
                  observations: jnp.ndarray,
                  training: bool = False) -> distrax.Distribution:
-                 
+
         outputs = MLP(self.hidden_dims,
                       activate_final=True,
                       dropout_rate=self.dropout_rate)(observations,

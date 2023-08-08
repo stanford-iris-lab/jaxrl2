@@ -138,17 +138,23 @@ class MLPRepeatPerLayer(nn.Module):
     activate_final: int = False
     dropout_rate: Optional[float] = None
     init_scale: Optional[float] = 1.
-    key_for_repeat='actions'
+    use_normalized_features: bool = False ###===### ###---###
+    key_for_repeat: str='actions'
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, training: bool = False) -> jnp.ndarray:
         repeat_tens = x[self.key_for_repeat]
+
+
+        print("self.key_for_repeat:", self.key_for_repeat)
+        print("repeat_tens:", repeat_tens)
 
         x = _flatten_dict(x)
         print('mlp post flatten', x.shape)
 
         for i, size in enumerate(self.hidden_dims):
             x = jnp.concatenate([x, repeat_tens], axis=-1)
+            print(f"[{i}] x:", x)
             x = nn.Dense(size, kernel_init=default_init(self.init_scale))(x)
             # print('post fc size', x.shape)
             if i + 1 < len(self.hidden_dims) or self.activate_final:
@@ -156,7 +162,61 @@ class MLPRepeatPerLayer(nn.Module):
                 if self.dropout_rate is not None:
                     x = nn.Dropout(rate=self.dropout_rate)(
                         x, deterministic=not training)
+
+        # import pdb; pdb.set_trace()
         return x
+
+
+class MLPActionSepRepeatPerLayer(nn.Module): ###===### ###---###
+    hidden_dims: Sequence[int]
+    activations: Callable[[jnp.ndarray], jnp.ndarray] = nn.relu
+    activate_final: int = False
+    dropout_rate: Optional[float] = None
+    init_scale: Optional[float] = 1.0
+    use_normalized_features: bool = False
+    use_pixel_sep: bool = False
+    key_for_repeat: str='actions'
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray, training: bool = False):
+        repeat_tens = x[self.key_for_repeat]
+
+        print("self.key_for_repeat:", self.key_for_repeat)
+        print("repeat_tens:", repeat_tens)
+
+        if self.use_pixel_sep:
+            x, action, pixels = _flatten_dict_special_v2(x, only_pixels=True)
+            print ('Using pixel sep in MLP action sep', pixels.shape)
+        else:
+            x, action = _flatten_dict_special(x)
+        print ('mlp action sep state post flatten', x.shape)
+        print ('mlp action sep action post flatten', action.shape)
+
+        for i, size in enumerate(self.hidden_dims):
+            if self.use_pixel_sep:
+                x_used = jnp.concatenate([x, repeat_tens, action, pixels], axis=-1)
+            else:
+                x_used = jnp.concatenate([x, repeat_tens, action], axis=-1)
+
+            print(f"[{i}] x_used:", x_used)
+            import pdb; pdb.set_trace()
+
+            if i == len(self.hidden_dims)-1 and not self.activate_final:
+                x = nn.Dense(size, kernel_init=default_init(1e-2))(x_used)
+            else:
+                x = nn.Dense(size, kernel_init=default_init())(x_used)
+
+
+            print ('FF layers: ', x_used.shape, x.shape)
+            if i + 1 < len(self.hidden_dims) or self.activate_final:
+                x = self.activations(x)
+                if self.dropout_rate is not None:
+                    x = nn.Dropout(rate=self.dropout_rate)(
+                        x, deterministic=not training)
+
+
+        return x
+
 
 
 class MLPActionProject(nn.Module):
