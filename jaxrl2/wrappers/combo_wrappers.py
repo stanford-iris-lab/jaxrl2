@@ -13,6 +13,7 @@ import metaworld
 import numpy as np
 from PIL import Image
 
+import os 
 #import roboverse
 
 
@@ -433,11 +434,11 @@ CAMERAS = {
 
 class Kitchen:
     def __init__(self, task=['microwave'], size=(64, 64), proprio=True, log_only_target_tasks=False):
-        # from .RPL.adept_envs import adept_envs
-        # sys.path.append("/workdisk/code/relay-policy-learning/adept_envs")
-        # sys.path.append("../../relay-policy-learning/adept_envs")
-        sys.path.append("../../finetuning_benchmark/benchmark/domains/relay-policy-learning/adept_envs")
-        # sys.path.append("/iris/u/khatch/vd5rl/finetuning_benchmark/benchmark/domains/relay-policy-learning/adept_envs")
+        # export RELAY_POLICY_REPO="/iris/u/khatch/vd5rl/finetuning_benchmark/benchmark/domains/relay-policy-learning/adept_envs"
+
+        RELAY_POLICY_PATH = os.environ.get('RELAY_POLICY_REPO', None)
+        print("RELAY_POLICY_PATH:", RELAY_POLICY_PATH)
+        sys.path.append(RELAY_POLICY_PATH)
 
         import adept_envs
         self._env = gym.make('kitchen_relax_rpl-v1')

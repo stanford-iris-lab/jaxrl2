@@ -36,9 +36,9 @@ from jaxrl2.agents.drq.augmentations import batched_random_crop, color_transform
 # from jaxrl2.agents.common import _unpack
 from jaxrl2.agents.drq.drq_learner import _unpack
 from jaxrl2.agents.drq.drq_learner import _share_encoder
-from jaxrl2.networks.kitchen_networks.encoders.networks import Encoder, PixelMultiplexer, PixelMultiplexerEncoder, PixelMultiplexerDecoder
-# from jaxrl2.networks.encoders.networks import Encoder, PixelMultiplexerEncoder, PixelMultiplexerDecoder
-# from jaxrl2.networks.pixel_multiplexer import PixelMultiplexer
+# from jaxrl2.networks.kitchen_networks.encoders.networks import Encoder, PixelMultiplexer, PixelMultiplexerEncoder, PixelMultiplexerDecoder
+from jaxrl2.networks.kitchen_networks.encoders.networks import Encoder, PixelMultiplexerEncoder, PixelMultiplexerDecoder
+from jaxrl2.networks.kitchen_networks.pixel_multiplexer import PixelMultiplexer
 
 from jaxrl2.networks.kitchen_networks.encoders.impala_encoder import ImpalaEncoder
 from jaxrl2.networks.kitchen_networks.encoders.resnet_encoderv1 import ResNet18, ResNet34, ResNetSmall
@@ -158,6 +158,7 @@ class PixelCQLLearnerEncoderSep(Agent):
                  decay_steps: Optional[int] = None,
                  hidden_dims: Sequence[int] = (256, 256),
                  cnn_features: Sequence[int] = (32, 32, 32, 32),
+                 cnn_filters: Sequence[int] = (3, 3, 3, 3),
                  cnn_strides: Sequence[int] = (2, 1, 1, 1),
                  cnn_padding: str = 'VALID',
                  latent_dim: int = 50,
@@ -289,11 +290,14 @@ class PixelCQLLearnerEncoderSep(Agent):
 
         policy_def = LearnedStdTanhNormalPolicy(hidden_dims, action_dim, dropout_rate=dropout_rate)
 
+        # actor_def = PixelMultiplexer(encoder=policy_encoder_def,
+        #                              network=policy_def,
+        #                              latent_dim=latent_dim,
+        #                              stop_gradient=share_encoders or freeze_encoders_actor,
+        #                              use_bottleneck=use_bottleneck)
         actor_def = PixelMultiplexer(encoder=policy_encoder_def,
                                      network=policy_def,
-                                     latent_dim=latent_dim,
-                                     stop_gradient=share_encoders or freeze_encoders_actor,
-                                     use_bottleneck=use_bottleneck)
+                                     latent_dim=latent_dim)
 
 
         actor_def_init = actor_def.init({'params': actor_key, 'noise':noise1_key, 'drop_path':drop1_key}, observations)

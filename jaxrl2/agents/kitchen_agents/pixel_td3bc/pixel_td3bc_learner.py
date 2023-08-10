@@ -19,7 +19,9 @@ from typing import Any
 
 from jaxrl2.agents.agent import Agent
 from jaxrl2.agents.drq.augmentations import batched_random_crop, color_transform
-from jaxrl2.networks.kitchen_networks.encoders.networks import Encoder, PixelMultiplexer
+# from jaxrl2.networks.kitchen_networks.encoders.networks import Encoder, PixelMultiplexer
+from jaxrl2.networks.kitchen_networks.pixel_multiplexer import PixelMultiplexer
+from jaxrl2.networks.kitchen_networks.encoders import D4PGEncoder
 from jaxrl2.networks.kitchen_networks.encoders.impala_encoder import ImpalaEncoder, SmallerImpalaEncoder
 from jaxrl2.networks.kitchen_networks.encoders.resnet_encoderv1 import ResNet18, ResNet34, ResNetSmall
 from jaxrl2.networks.kitchen_networks.encoders.resnet_encoderv2 import ResNetV2Encoder
@@ -98,6 +100,7 @@ class PixelTD3BCLearner(Agent):
                  decay_steps: Optional[int] = None,
                  hidden_dims: Sequence[int] = (256, 256),
                  cnn_features: Sequence[int] = (32, 32, 32, 32),
+                 cnn_filters: Sequence[int] = (3, 3, 3, 3),
                  cnn_strides: Sequence[int] = (2, 1, 1, 1),
                  cnn_padding: str = 'VALID',
                  latent_dim: int = 50,
@@ -138,6 +141,8 @@ class PixelTD3BCLearner(Agent):
 
         if encoder_type == 'small':
             encoder_def = Encoder(cnn_features, cnn_strides, cnn_padding)
+        elif encoder_type == 'd4pg':
+            encoder_def = D4PGEncoder(cnn_features, cnn_filters, cnn_strides, cnn_padding)
         elif encoder_type == 'impala':
             print('using impala')
             encoder_def = ImpalaEncoder(use_multiplicative_cond=use_multiplicative_cond)
@@ -178,12 +183,17 @@ class PixelTD3BCLearner(Agent):
             raise ValueError('policy type not found!')
 
 
+
+        # actor_def = PixelMultiplexer(encoder=encoder_def,
+        #                              network=policy_def,
+        #                              latent_dim=latent_dim,
+        #                              stop_gradient=share_encoders,
+        #                              use_bottleneck=use_bottleneck
+        #                              )
         actor_def = PixelMultiplexer(encoder=encoder_def,
                                      network=policy_def,
-                                     latent_dim=latent_dim,
-                                     stop_gradient=share_encoders,
-                                     use_bottleneck=use_bottleneck
-                                     )
+                                     latent_dim=latent_dim)
+
         actor_def_init = actor_def.init(actor_key, observations)
         actor_params = actor_def_init['params']
         actor_batch_stats = actor_def_init['batch_stats'] if 'batch_stats' in actor_def_init else None
@@ -194,11 +204,14 @@ class PixelTD3BCLearner(Agent):
                                   batch_stats=actor_batch_stats)
 
         critic_def = StateActionEnsemble(hidden_dims, num_qs=2)
+        # critic_def = PixelMultiplexer(encoder=encoder_def,
+        #                               network=critic_def,
+        #                               latent_dim=latent_dim,
+        #                               use_bottleneck=use_bottleneck
+        #                               )
         critic_def = PixelMultiplexer(encoder=encoder_def,
                                       network=critic_def,
-                                      latent_dim=latent_dim,
-                                      use_bottleneck=use_bottleneck
-                                      )
+                                      latent_dim=latent_dim)
         critic_def_init = critic_def.init(critic_key, observations,
                                         actions)
         critic_params = critic_def_init['params']

@@ -19,6 +19,8 @@ from jaxrl2.networks.kitchen_networks.encoders.impala_encoder import ImpalaEncod
 from jaxrl2.types import Params, PRNGKey
 import numpy as np
 
+from flax.training import checkpoints ###===### ###---###
+
 # from jaxrl2.agents.idql.ddpm_iql_learner import compute_q
 @partial(jax.jit, static_argnames=('critic_fn'))
 def compute_q(critic_fn, critic_params, observations, actions):
@@ -77,6 +79,19 @@ class Agent(struct.PyTreeNode):
             self.rng, self.actor.apply_fn, self.actor.params, observations
         )
         return np.asarray(actions), self.replace(rng=new_rng)
+    
+    ###===###
+    @property
+    def _save_dict(self):
+        raise NotImplementedError
+
+    def save_checkpoint(self, dir, step, keep_every_n_steps):
+        checkpoints.save_checkpoint(dir, self._save_dict, step, prefix='checkpoint', overwrite=False, keep_every_n_steps=keep_every_n_steps)
+
+    def restore_checkpoint(self, dir):
+        raise NotImplementedError
+    ###---###
+
 
 class PixelIDQLLearner(Agent):
     critic: TrainState
@@ -195,20 +210,79 @@ class PixelIDQLLearner(Agent):
                 strides=cnn_strides,
                 padding=cnn_padding,
             )
-        elif encoder == 'impala':
-            print('using impala')
-            encoder_cls = partial(ImpalaEncoder, use_multiplicative_cond=use_multiplicative_cond)
-        elif encoder == "resnet":
-            encoder_cls = partial(ResNetV2Encoder, stage_sizes=(2, 2, 2, 2))
 
-        actor_cls = PixelMultiplexer(
-            encoder_cls=encoder_cls,
-            network_cls=actor_cls,
-            latent_dim=latent_dim,
-            pixel_keys=pixel_keys,
-            depth_keys=depth_keys,
-            skip_normalization=True,
-        )
+            actor_cls = PixelMultiplexer(
+                encoder_cls=encoder_cls,
+                network_cls=actor_cls,
+                latent_dim=latent_dim,
+                pixel_keys=pixel_keys,
+                depth_keys=depth_keys,
+            )
+
+        elif encoder == "impala":
+            # encoder_cls = ImpalaEncoder(use_multiplicative_cond=use_multiplicative_cond)
+            encoder_cls = partial(ImpalaEncoder, use_multiplicative_cond=use_multiplicative_cond)
+            # actor_cls = PixelMultiplexerJaxRL2(
+            #     encoder=encoder_cls,
+            #     network=actor_cls,
+            #     latent_dim=latent_dim,
+            # )
+
+            print("encoder_cls:", encoder_cls)
+
+            actor_cls = PixelMultiplexer(
+                encoder_cls=encoder_cls,
+                network_cls=actor_cls,
+                latent_dim=latent_dim,
+                pixel_keys=pixel_keys,
+                depth_keys=depth_keys,
+                skip_normalization=True,
+            )
+            # actor_cls = PixelMultiplexer(encoder_cls=encoder_cls, network_cls=actor_cls, latent_dim=latent_dim, pixel_keys=pixel_keys, depth_keys=depth_keys, skip_normalization=True)
+        elif encoder == "resnet":
+            # encoder_cls = partial(ResNetV2Encoder, stage_sizes=(2, 2, 2, 2))
+            encoder_cls = partial(ResNetV2Encoder, stage_sizes=(2, 2, 2))
+
+            actor_cls = PixelMultiplexer(
+                encoder_cls=encoder_cls,
+                network_cls=actor_cls,
+                latent_dim=latent_dim,
+                pixel_keys=pixel_keys,
+                depth_keys=depth_keys,
+            )
+
+            actor_cls = PixelMultiplexer(
+                encoder_cls=encoder_cls,
+                network_cls=actor_cls,
+                latent_dim=latent_dim,
+                pixel_keys=pixel_keys,
+                depth_keys=depth_keys,
+            )
+        else:
+            raise ValueError(f"Unsupported encoder: {encoder}")
+
+        # if encoder == "d4pg":
+        #     encoder_cls = partial(
+        #         D4PGEncoder,
+        #         features=cnn_features,
+        #         filters=cnn_filters,
+        #         strides=cnn_strides,
+        #         padding=cnn_padding,
+        #     )
+        # elif encoder == 'impala':
+        #     print('using impala')
+        #     encoder_cls = partial(ImpalaEncoder, use_multiplicative_cond=use_multiplicative_cond)
+        # elif encoder == "resnet":
+        #     encoder_cls = partial(ResNetV2Encoder, stage_sizes=(2, 2, 2, 2))
+
+        # actor_cls = PixelMultiplexer(
+        #     encoder_cls=encoder_cls,
+        #     network_cls=actor_cls,
+        #     latent_dim=latent_dim,
+        #     pixel_keys=pixel_keys,
+        #     depth_keys=depth_keys,
+        #     skip_normalization=True,
+        # )
         actor_params = actor_cls.init(actor_key, observations, actions, time)["params"]
         actor = TrainState.create(
             apply_fn=actor_cls.apply,
@@ -255,8 +329,10 @@ class PixelIDQLLearner(Agent):
             latent_dim=latent_dim,
             pixel_keys=pixel_keys,
             depth_keys=depth_keys,
-            skip_normalization=True,
+            # skip_normalization=True,
         )
+
+        
         critic_params = critic_def.init(critic_key, observations, actions)["params"]
         critic = TrainState.create(
             apply_fn=critic_def.apply,
@@ -277,7 +353,7 @@ class PixelIDQLLearner(Agent):
             latent_dim=latent_dim,
             pixel_keys=pixel_keys,
             depth_keys=depth_keys,
-            skip_normalization=True,
+            # skip_normalization=True,
         )
         value_params = value_def.init(value_key, observations)["params"]
         value = TrainState.create(
@@ -411,8 +487,8 @@ class PixelIDQLLearner(Agent):
         if "pixels" not in batch["next_observations"]:
             batch = _unpack(batch)
 
-        value = _share_encoder(source=agent.critic, target=agent.value)
-        agent = agent.replace(value=value)
+        # value = _share_encoder(source=agent.critic, target=agent.value)
+        # agent = agent.replace(value=value)
 
         # Not sure if actor should share encoder with critic, but it's fully disconnected so it probably doesn't matter...?
 
@@ -463,8 +539,8 @@ class PixelIDQLLearner(Agent):
         if "pixels" not in batch["next_observations"]:
             batch = _unpack(batch)
 
-        value = _share_encoder(source=agent.critic, target=agent.value)
-        new_agent = agent.replace(value=value)
+        # value = _share_encoder(source=agent.critic, target=agent.value)
+        # new_agent = agent.replace(value=value)
 
         rng, key = jax.random.split(agent.rng)
         observations = self.data_augmentation_fn(key, batch["observations"])
@@ -514,5 +590,35 @@ class PixelIDQLLearner(Agent):
     def sample_actions(self, observations: jnp.ndarray):
         return self.eval_actions(observations) #Just take argmax for online finetuning
 
-    def save_checkpoint(self, *args, **kwargs):
-        pass
+    ###===###
+    @property
+    def _save_dict(self):
+        save_dict = {
+            'score_model': self.score_model,
+            'target_score_model': self.target_score_model,
+            "value":self.value,
+            "critic":self.critic,
+            "target_critic":self.target_critic,
+        }
+        return save_dict
+
+    def restore_checkpoint(self, dir):
+        if os.path.isfile(dir):
+            checkpoint_file = dir
+        else:
+            def sort_key_fn(checkpoint_file):
+                chkpt_name = checkpoint_file.split("/")[-1]
+                return int(chkpt_name[len("checkpoint"):])
+
+            checkpoint_files = glob(os.path.join(dir, "checkpoint*"))
+            checkpoint_files = sorted(checkpoint_files, key=sort_key_fn)
+            checkpoint_file = checkpoint_files[-1]
+
+        output_dict = checkpoints.restore_checkpoint(checkpoint_file, self._save_dict)
+        # self._actor = output_dict['actor']
+        self.score_model = output_dict["score_model"]
+        self.target_score_model = output_dict["target_score_model"]
+        self.value = output_dict["value"]
+        self.critic = output_dict["critic"]
+        self.target_critic = output_dict["target_critic"]
+    ###---###

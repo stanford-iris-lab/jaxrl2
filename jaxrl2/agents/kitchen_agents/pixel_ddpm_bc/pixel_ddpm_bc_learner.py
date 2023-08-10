@@ -360,7 +360,8 @@ class PixelDDPMBCLearner(Agent):
     @property
     def _save_dict(self):
         save_dict = {
-            'actor': self._actor,
+            'score_model': self.score_model,
+            'target_score_model': self.target_score_model,
         }
         return save_dict
 
@@ -377,5 +378,7 @@ class PixelDDPMBCLearner(Agent):
             checkpoint_file = checkpoint_files[-1]
 
         output_dict = checkpoints.restore_checkpoint(checkpoint_file, self._save_dict)
-        self._actor = output_dict['actor']
+        # self._actor = output_dict['actor']
+        self.score_model = output_dict["score_model"]
+        self.target_score_model = output_dict["target_score_model"]
     ###---###

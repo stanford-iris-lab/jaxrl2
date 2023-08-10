@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=6
 #SBATCH --gres=gpu:titanrtx:1
 #SBATCH --mem=128G
-#SBATCH --job-name="cinstand"
+#SBATCH --job-name="tinstand"
 #SBATCH --account=viscam
 
 cd /iris/u/khatch/vd5rl/jaxrl2-irisfork/examples
@@ -14,7 +14,6 @@ source ~/.bashrc
 source /iris/u/khatch/anaconda3/bin/activate
 # source activate jaxrlfork
 conda activate jaxrlfork
-
 
 unset LD_LIBRARY_PATH
 unset LD_PRELOAD
@@ -38,11 +37,12 @@ pwd
 ls -l /usr/local
 python3 -u gpu_test.py
 
+
 XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
 --task "standardkitchen_indistribution" \
 --tqdm=true \
 --project bench_standardkitchen_debug3 \
---algorithm cql_slow \
+--algorithm td3bc \
 --proprio=true \
 --description proprio \
 --eval_episodes 50 \

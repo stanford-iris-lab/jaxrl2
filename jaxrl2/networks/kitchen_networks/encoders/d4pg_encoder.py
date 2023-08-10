@@ -13,7 +13,7 @@ class D4PGEncoder(nn.Module):
     padding: str = "VALID"
 
     @nn.compact
-    def __call__(self, observations: jnp.ndarray) -> jnp.ndarray:
+    def __call__(self, observations: jnp.ndarray, train=True) -> jnp.ndarray:
         assert len(self.features) == len(self.strides)
 
         x = observations.astype(jnp.float32) / 255.0

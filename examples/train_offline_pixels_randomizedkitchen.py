@@ -42,7 +42,7 @@ flags.DEFINE_string('project', "vd5rl", 'WandB project.')
 flags.DEFINE_string('algorithm', "cql", 'Which offline RL algorithm to use.')
 flags.DEFINE_string('description', "default", 'WandB project.')
 flags.DEFINE_string('task', "microwave", 'Task for the kitchen env.')
-flags.DEFINE_string('camera_angle', "camera2", 'Camera angle.')
+# flags.DEFINE_string('camera_angle', "camera2", 'Camera angle.')
 flags.DEFINE_string('datadir', "microwave", 'Directory with dataset files.')
 flags.DEFINE_integer('ep_length', 280, 'Episode length.')
 flags.DEFINE_integer('action_repeat', 1, 'Random seed.')
@@ -66,23 +66,27 @@ flags.DEFINE_boolean('tqdm', False, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
 flags.DEFINE_boolean('debug', False, 'Set to debug params (shorter).')
 flags.DEFINE_float("discount", 0.99, "Take top N% trajectories.")
+flags.DEFINE_integer("im_size", 128, "Image size.")
+flags.DEFINE_boolean("use_wrist_cam", True, "Use the wrist cam?")
+flags.DEFINE_string('camera_ids', "12", 'Eg: 0,1')
 
-# config_flags.DEFINE_config_file(
-#     'config',
-#     './configs/offline_pixels_config.py:cql',
-#     'File path to the training hyperparameter configuration.',
-#     lock_config=False)
+
+
+import sys
+algname = sys.argv[sys.argv.index("--algorithm") + 1]
+print("algname:", algname)
+assert algname in ["bc", "iql", "cql_slow", "cql", "calql", "td3bc", "ddpm_bc", "idql"], f"algname: {algname}"
+
+config_flags.DEFINE_config_file(
+    'config',
+    f'./configs/offline_pixels_randomizedkitchen_debug_config.py:{algname}',
+    'File path to the training hyperparameter configuration.',
+    lock_config=False)
 
 
 def main(_):
     from jax.lib import xla_bridge
     print('DEVICE:', xla_bridge.get_backend().platform)
-
-    config_flags.DEFINE_config_file(
-        'config',
-        f'./configs/offline_pixels_diversekitchen_config.py:{FLAGS.algorithm}',
-        'File path to the training hyperparameter configuration.',
-        lock_config=False)
 
     if FLAGS.debug:
         FLAGS.project = "trash_results"
@@ -113,9 +117,9 @@ def main(_):
 
     wandb.config.update(FLAGS)
 
-    env = make_env(FLAGS.task, FLAGS.ep_length, FLAGS.action_repeat, FLAGS.proprio, FLAGS.camera_angle)
+    env = make_env(FLAGS.task, FLAGS.ep_length, FLAGS.action_repeat, FLAGS.proprio, im_size=FLAGS.im_size, camera_ids=FLAGS.camera_ids, use_wrist_cam=FLAGS.use_wrist_cam)
     env = gym.wrappers.RecordEpisodeStatistics(env, deque_size=1)
-    eval_env = make_env(FLAGS.task, FLAGS.ep_length, FLAGS.action_repeat, FLAGS.proprio, FLAGS.camera_angle)
+    eval_env = make_env(FLAGS.task, FLAGS.ep_length, FLAGS.action_repeat, FLAGS.proprio, im_size=FLAGS.im_size, camera_ids=FLAGS.camera_ids, use_wrist_cam=FLAGS.use_wrist_cam)
 
     print('Environment Created')
     kwargs = dict(FLAGS.config.model_config)
@@ -311,10 +315,10 @@ def main(_):
         agent.save_checkpoint(os.path.join(save_dir, "online_checkpoints"), i + FLAGS.max_gradient_steps, -1)
 
 
-def make_env(task, ep_length, action_repeat, proprio, camera_angle=None):
+def make_env(task, ep_length, action_repeat, proprio, im_size=128, camera_ids="0,1", use_wrist_cam=True):
     suite, task = task.split('_', 1)
 
-    if "diversekitchen" in suite:
+    if "randomizedkitchen" in suite:
 
         """
         Check what the episode length is for standard kitchen
@@ -381,56 +385,3 @@ def load_episode(episode_file, task, tasks_list):
 if __name__ == '__main__':
     app.run(main)
 
-
-"""
-cd /iris/u/khatch/vd5rl/jaxrl2-irisfork/examples
-conda activate jaxrlfork
-unset LD_LIBRARY_PATH
-unset LD_PRELOAD
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.mujoco/mujoco210/bin
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia-000
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
-export MUJOCO_GL="egl"
-export KITCHEN_DATASETS=/iris/u/khatch/vd5rl/datasets/diversekitchen
-
-
-
-XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_diversekitchen.py \
---task "diversekitchen_indistribution-expert_demos" \
---tqdm=true \
---project dev \
---algorithm cql \
---proprio=true \
---description proprio \
---eval_episodes 100 \
---eval_interval 50000 \
---online_eval_interval 50000 \
---log_interval 1000 \
---max_gradient_steps 500_000 \
---finetune_online=false \
---max_online_gradient_steps 500_000 \
---replay_buffer_size 400_000 \
---batch_size 128 \
---seed 0 \
---debug=true
-
-
-XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_diversekitchen.py \
---task "diversekitchen_indistribution-expert_demos" \
---tqdm=true \
---project trash_results \
---algorithm ddpm_bc \
---proprio=true \
---description proprio \
---eval_episodes 10 \
---eval_interval 1_000 \
---online_eval_interval 50000 \
---log_interval 1000 \
---max_gradient_steps 500_000 \
---max_online_gradient_steps 500_000 \
---replay_buffer_size 50_000 \
---batch_size 128 \
---seed 0 \
---debug=true
-"""

@@ -38,20 +38,20 @@ pwd
 ls -l /usr/local
 python3 -u gpu_test.py
 
-XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
---task "standardkitchen_indistribution" \
+XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_randomizedkitchen.py \
+--task "randomizedkitchen_indistribution-expert_demos" \
 --tqdm=true \
---project bench_standardkitchen_debug3 \
---algorithm cql_slow \
+--project bench_randomizedkitchen_debug3 \
+--algorithm cql \
 --proprio=true \
 --description proprio \
---eval_episodes 50 \
---eval_interval 10_000 \
---online_eval_interval 10_000 \
+--eval_episodes 100 \
+--eval_interval 50000 \
+--online_eval_interval 50000 \
 --log_interval 1000 \
 --max_gradient_steps 500_000 \
 --max_online_gradient_steps 500_000 \
---replay_buffer_size 700_000 \
+--replay_buffer_size 400_000 \
 --batch_size 256 \
 --im_size 64 \
 --use_wrist_cam=false \

@@ -292,6 +292,7 @@ def get_td3bc_config():
 
     return config
 
+
 def get_ddpm_bc_config():
     config = ml_collections.ConfigDict()
 
@@ -347,7 +348,6 @@ def get_idql_config():
 
 
 def get_config(config_string):
-    print("config_string:", config_string)
     possible_structures = {
         "bc": ml_collections.ConfigDict(
             {"model_constructor": "PixelBCLearner", "model_config": get_bc_config()}
@@ -364,14 +364,15 @@ def get_config(config_string):
         "calql": ml_collections.ConfigDict(
             {"model_constructor": "PixelCQLLearnerEncoderSep", "model_config": get_calql_config()}
         ),
-        "td3bc": ml_collections.ConfigDict(
-            {"model_constructor": "PixelTD3BCLearner", "model_config": get_td3bc_config()}
-        ),
         "ddpm_bc": ml_collections.ConfigDict(
             {"model_constructor": "PixelDDPMBCLearner", "model_config": get_ddpm_bc_config()}
+        ),
+        "td3bc": ml_collections.ConfigDict(
+            {"model_constructor": "PixelTD3BCLearner", "model_config": get_td3bc_config()}
         ),
         "idql": ml_collections.ConfigDict(
             {"model_constructor": "PixelIDQLLearner", "model_config": get_idql_config()}
         ),
     }
+
     return possible_structures[config_string]

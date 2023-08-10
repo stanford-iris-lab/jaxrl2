@@ -41,8 +41,8 @@ flags.DEFINE_string('project', "vd5rl", 'WandB project.')
 flags.DEFINE_string('algorithm', "cql", 'Which offline RL algorithm to use.')
 flags.DEFINE_string('description', "default", 'WandB project.')
 flags.DEFINE_string('task', "diversekitchen_indistribution-expert_demos", 'Task for the kitchen env.')
-flags.DEFINE_string('camera_angle', "camera2", 'Camera angle.')
-flags.DEFINE_string('datadir', "microwave", 'Directory with dataset files.')
+# flags.DEFINE_string('camera_angle', "camera2", 'Camera angle.')
+# flags.DEFINE_string('datadir', "microwave", 'Directory with dataset files.')
 flags.DEFINE_integer('ep_length', 280, 'Episode length.')
 flags.DEFINE_integer('action_repeat', 1, 'Random seed.')
 flags.DEFINE_integer('replay_buffer_size', int(1e6), 'Number of transitions the (offline) replay buffer can hold.')
@@ -83,7 +83,6 @@ assert algname in ["bc", "iql", "cql_slow", "cql", "calql", "td3bc", "ddpm_bc", 
 
 config_flags.DEFINE_config_file(
     'config',
-    # f'./configs/offline_pixels_standardkitchen_config.py:{FLAGS.algorithm}', ###DEBUG###
     f'./configs/offline_pixels_standardkitchen_debug_config.py:{algname}',
     'File path to the training hyperparameter configuration.',
     lock_config=False)
@@ -91,13 +90,6 @@ config_flags.DEFINE_config_file(
 def main(_):
     from jax.lib import xla_bridge
     print('DEVICE:', xla_bridge.get_backend().platform)
-
-    # config_flags.DEFINE_config_file(
-    #     'config',
-    #     # f'./configs/offline_pixels_standardkitchen_config.py:{FLAGS.algorithm}', ###DEBUG###
-    #     f'./configs/offline_pixels_standardkitchen_debug_config.py:{FLAGS.algorithm}',
-    #     'File path to the training hyperparameter configuration.',
-    #     lock_config=False)
 
     if FLAGS.debug:
         FLAGS.project = "trash_results"
@@ -126,9 +118,9 @@ def main(_):
 
     wandb.config.update(FLAGS)
 
-    env = make_env(FLAGS.task, FLAGS.ep_length, FLAGS.action_repeat, FLAGS.proprio, camera_angle=FLAGS.camera_angle, im_size=FLAGS.im_size, camera_ids=FLAGS.camera_ids, use_wrist_cam=FLAGS.use_wrist_cam)
+    env = make_env(FLAGS.task, FLAGS.ep_length, FLAGS.action_repeat, FLAGS.proprio, im_size=FLAGS.im_size, camera_ids=FLAGS.camera_ids, use_wrist_cam=FLAGS.use_wrist_cam)
     env = gym.wrappers.RecordEpisodeStatistics(env, deque_size=1)
-    eval_env = make_env(FLAGS.task, FLAGS.ep_length, FLAGS.action_repeat, FLAGS.proprio, camera_angle=FLAGS.camera_angle, im_size=FLAGS.im_size, camera_ids=FLAGS.camera_ids, use_wrist_cam=FLAGS.use_wrist_cam)
+    eval_env = make_env(FLAGS.task, FLAGS.ep_length, FLAGS.action_repeat, FLAGS.proprio, im_size=FLAGS.im_size, camera_ids=FLAGS.camera_ids, use_wrist_cam=FLAGS.use_wrist_cam)
 
     print('Environment Created')
     kwargs = dict(FLAGS.config.model_config)
@@ -156,7 +148,10 @@ def main(_):
     replay_buffer = MemoryEfficientReplayBuffer(env.observation_space, env.action_space, FLAGS.replay_buffer_size)
     replay_buffer.seed(FLAGS.seed)
     replay_buffer_iterator = replay_buffer.get_iterator(sample_args={"batch_size": FLAGS.batch_size, "include_pixels": False})
-    load_data(replay_buffer, env, FLAGS.datadir, FLAGS.task, FLAGS.ep_length, 3, FLAGS.proprio, FLAGS.discount, debug=FLAGS.debug)
+
+    DATADIR = os.environ.get('STANDARD_KITCHEN_DATASETS', None)
+    print("DATADIR:", DATADIR)
+    load_data(replay_buffer, env, DATADIR, FLAGS.task, FLAGS.ep_length, 3, FLAGS.proprio, FLAGS.discount, debug=FLAGS.debug)
 
     if FLAGS.take_top is not None or FLAGS.filter_threshold is not None:
         ds.filter(take_top=FLAGS.take_top, threshold=FLAGS.filter_threshold)
@@ -315,7 +310,7 @@ def get_task_list(task):
 
     return tasks_list
 
-def make_env(task, ep_length, action_repeat, proprio, camera_angle=None, im_size=128, camera_ids="0,1", use_wrist_cam=True):
+def make_env(task, ep_length, action_repeat, proprio, im_size=128, camera_ids="0,1", use_wrist_cam=True):
     suite, task = task.split('_', 1)
 
     tasks_list = get_task_list(task)
@@ -455,33 +450,3 @@ def load_data(replay_buffer, env, offline_dataset_path, task, ep_length, num_sta
 if __name__ == '__main__':
     app.run(main)
 
-
-"""
-unset LD_LIBRARY_PATH
-unset LD_PRELOAD
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/.mujoco/mujoco210/bin
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia-000
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/nvidia
-export MUJOCO_GL="egl"
-
-XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_kitchen.py \
---task "standardkitchen_outofdistribution" \
---datadir /iris/u/khatch/preliminary_experiments/model_based_offline_online/LOMPO/data/kitchen2/kitchen_demos_multitask_lexa_view_and_wrist_npz/ \
---tqdm=true \
---project vd5rl_kitchen \
---algorithm cql \
---proprio=true \
---description proprio \
---eval_episodes 5 \
---eval_interval 1000 \
---max_gradient_steps 500_000 \
---max_online_gradient_steps 500_000 \
---replay_buffer_size 1_000_000 \
---seed 0 \
---debug=true
-
-
-
-indistribution
-"""
