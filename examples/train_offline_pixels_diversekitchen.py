@@ -18,6 +18,8 @@ from jaxrl2.agents.pixel_iql import PixelIQLLearner
 from jaxrl2.agents.pixel_bc import PixelBCLearner
 from jaxrl2.agents import PixelIDQLLearner, PixelDDPMBCLearner
 from jaxrl2.agents import PixelCQLLearnerEncoderSepParallel
+from jaxrl2.agents import PixelCQLLearnerEncoderSep
+from jaxrl2.agents import PixelTD3BCLearner
 
 import jaxrl2.wrappers.combo_wrappers as wrappers
 from jaxrl2.wrappers.frame_stack import FrameStack
@@ -63,6 +65,7 @@ flags.DEFINE_float(
 flags.DEFINE_boolean('tqdm', False, 'Use tqdm progress bar.')
 flags.DEFINE_boolean('save_video', False, 'Save videos during evaluation.')
 flags.DEFINE_boolean('debug', False, 'Set to debug params (shorter).')
+flags.DEFINE_float("discount", 0.99, "Take top N% trajectories.")
 
 # config_flags.DEFINE_config_file(
 #     'config',
@@ -85,13 +88,13 @@ def main(_):
         FLAGS.project = "trash_results"
         # FLAGS.batch_size = 16
         FLAGS.max_gradient_steps = 500
-        FLAGS.eval_interval = 300
-        FLAGS.online_eval_interval = 300
+        FLAGS.eval_interval = 400
+        FLAGS.online_eval_interval = 400
         FLAGS.eval_episodes = 2
-        FLAGS.log_interval = 400
+        FLAGS.log_interval = 300
 
         if FLAGS.max_online_gradient_steps > 0:
-            FLAGS.max_online_gradient_steps = 500
+            FLAGS.max_online_gradient_steps = 1000
 
     save_dir = os.path.join(FLAGS.save_dir, FLAGS.project, FLAGS.task, FLAGS.algorithm, FLAGS.description, f"seed_{FLAGS.seed}")
     os.makedirs(os.path.join(save_dir, "wandb"), exist_ok=True)
@@ -130,6 +133,13 @@ def main(_):
         agent = globals()[FLAGS.config.model_constructor](
             FLAGS.seed, env.observation_space.sample(), env.action_space.sample(),
             **kwargs)
+        # obs = env.observation_space.sample()
+        # obs["pixels"] = obs["pixels"][None]
+        # obs["states"] = obs["states"][None]
+        #
+        # agent = globals()[FLAGS.config.model_constructor](
+        #     FLAGS.seed, obs, env.action_space.sample()[None],
+        #     **kwargs)
     print('Agent created')
 
     print("Loading replay buffer")
@@ -137,7 +147,7 @@ def main(_):
     # replay_buffer.seed(FLAGS.seed)
     # replay_buffer_iterator = replay_buffer.get_iterator(sample_args={"batch_size": FLAGS.batch_size, "include_pixels": False})
     # load_data(replay_buffer, FLAGS.datadir, FLAGS.task, FLAGS.ep_length, 3, FLAGS.proprio, debug=FLAGS.debug)
-    replay_buffer = env.q_learning_dataset(include_pixels=False, size=FLAGS.replay_buffer_size, debug=FLAGS.debug)
+    replay_buffer = env.q_learning_dataset(include_pixels=False, size=FLAGS.replay_buffer_size, discount=FLAGS.discount, debug=FLAGS.debug)
 
     if FLAGS.take_top is not None or FLAGS.filter_threshold is not None:
         ds.filter(take_top=FLAGS.take_top, threshold=FLAGS.filter_threshold)
@@ -179,7 +189,7 @@ def main(_):
                     wandb.log({f'training/{k}': v}, step=i)
                     # print(k, v)
 
-        if i % FLAGS.eval_interval == 0:
+        if i % FLAGS.eval_interval == 0 or i == 1000:
             eval_info = evaluate_kitchen(agent,
                                  eval_env,
                                  num_episodes=FLAGS.eval_episodes,
@@ -193,7 +203,7 @@ def main(_):
 
     eval_info = evaluate_kitchen(agent,
                          eval_env,
-                         num_episodes=100,
+                         num_episodes=2 if FLAGS.debug else 100,
                          progress_bar=False)
     for k, v in eval_info.items():
         wandb.log({f'evaluation/{k}': v}, step=i)
@@ -203,6 +213,7 @@ def main(_):
     if FLAGS.finetune_online and FLAGS.max_online_gradient_steps > 0:
         print('Start online training')
         observation, done = env.reset(), False
+        transitions = []
         tbar = tqdm.tqdm(range(1, FLAGS.max_online_gradient_steps + 1), smoothing=0.1, disable=not FLAGS.tqdm)
         for i in tbar:
             tbar.set_description(f"[{FLAGS.algorithm} {FLAGS.seed} (online)]")
@@ -226,16 +237,24 @@ def main(_):
             else:
                 mask = 0.0
 
-            replay_buffer.insert(
-                dict(
-                    observations=observation,
-                    actions=action,
-                    rewards=reward,
-                    masks=mask,
-                    dones=done,
-                    next_observations=next_observation,
-                )
-            )
+            transitions.append(dict(
+                observations=observation,
+                actions=action,
+                rewards=reward,
+                masks=mask,
+                dones=done,
+                next_observations=next_observation,
+            ))
+            # replay_buffer.insert(
+            #     dict(
+            #         observations=observation,
+            #         actions=action,
+            #         rewards=reward,
+            #         masks=mask,
+            #         dones=done,
+            #         next_observations=next_observation,
+            #     )
+            # )
 
             observation = next_observation
 
@@ -244,6 +263,17 @@ def main(_):
                     decode = {"r": "return", "l": "length", "t": "time"}
                     wandb.log({f"training/{decode[k]}": v}, step=i + FLAGS.max_gradient_steps)
                 observation, done = env.reset(), False
+
+                reward_to_go = [0]*len(transitions)
+                prev_return = transitions[-1]["rewards"]/(1- FLAGS.discount)
+                for i in range(len(transitions)):
+                    reward_to_go[-i-1] = transitions[-i-1]["rewards"] + FLAGS.discount * prev_return
+                    prev_return = reward_to_go[-i-1]
+
+                for i, transition in enumerate(transitions):
+                    transition["mc_returns"] = reward_to_go[i]
+                    replay_buffer.insert(transition)
+                transitions = []
 
             batch = replay_buffer.sample(FLAGS.batch_size, reinsert_offline=False)
             if FLAGS.algorithm == "idql":
@@ -262,7 +292,7 @@ def main(_):
                         wandb.log({f'training/{k}': v}, step=i + FLAGS.max_gradient_steps)
                         # print(k, v)
 
-            if i % FLAGS.online_eval_interval == 0:
+            if i % FLAGS.online_eval_interval == 0 or i == 1000:
                 eval_info = evaluate_kitchen(agent,
                                      eval_env,
                                      num_episodes=FLAGS.eval_episodes,
@@ -370,7 +400,7 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_diversekitch
 --task "diversekitchen_indistribution-expert_demos" \
 --tqdm=true \
 --project dev \
---algorithm bc \
+--algorithm cql \
 --proprio=true \
 --description proprio \
 --eval_episodes 100 \
@@ -389,17 +419,17 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_diversekitch
 XLA_PYTHON_CLIENT_PREALLOCATE=false python3 -u train_offline_pixels_diversekitchen.py \
 --task "diversekitchen_indistribution-expert_demos" \
 --tqdm=true \
---project dev \
---algorithm calql \
+--project trash_results \
+--algorithm ddpm_bc \
 --proprio=true \
 --description proprio \
---eval_episodes 100 \
---eval_interval 50000 \
+--eval_episodes 10 \
+--eval_interval 1_000 \
 --online_eval_interval 50000 \
 --log_interval 1000 \
 --max_gradient_steps 500_000 \
 --max_online_gradient_steps 500_000 \
---replay_buffer_size 400_000 \
+--replay_buffer_size 50_000 \
 --batch_size 128 \
 --seed 0 \
 --debug=true
