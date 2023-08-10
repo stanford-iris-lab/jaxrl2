@@ -13,21 +13,21 @@ from ml_collections import config_flags
 
 from jaxrl2.evaluation import evaluate_kitchen
 
-from jaxrl2.agents.pixel_cql import PixelCQLLearner
-from jaxrl2.agents.pixel_iql import PixelIQLLearner
-from jaxrl2.agents.pixel_bc import PixelBCLearner
-from jaxrl2.agents.pixel_ddpm_bc import PixelDDPMBCLearner
-from jaxrl2.agents import PixelCQLLearnerEncoderSepParallel
-from jaxrl2.agents import PixelCQLLearnerEncoderSep
-from jaxrl2.agents import PixelTD3BCLearner
-from jaxrl2.agents import PixelIDQLLearner
+from jaxrl2.agents.kitchen_agents.pixel_cql import PixelCQLLearner
+from jaxrl2.agents.kitchen_agents.pixel_iql import PixelIQLLearner
+from jaxrl2.agents.kitchen_agents.pixel_bc import PixelBCLearner
+from jaxrl2.agents.kitchen_agents.pixel_ddpm_bc import PixelDDPMBCLearner
+from jaxrl2.agents.kitchen_agents import PixelCQLLearnerEncoderSepParallel
+from jaxrl2.agents.kitchen_agents import PixelCQLLearnerEncoderSep
+from jaxrl2.agents.kitchen_agents import PixelTD3BCLearner
+from jaxrl2.agents.kitchen_agents import PixelIDQLLearner
 
 import jaxrl2.wrappers.combo_wrappers as wrappers
 from jaxrl2.wrappers.frame_stack import FrameStack
 
 import collections
 
-from jaxrl2.data import MemoryEfficientReplayBuffer
+from jaxrl2.data.kitchen_data import MemoryEfficientReplayBuffer
 
 from glob import glob
 
